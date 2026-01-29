@@ -136,176 +136,201 @@ app.post('/webhook', (req, res) => {
 });
 
 async function handleMessage(sender_psid, received_message) {
-    if (!received_message || (!received_message.text && !received_message.attachments)) return;
-    let text = received_message.text || "";
-    let imageUrl = null;
-    if (received_message.attachments && received_message.attachments[0].type === 'image') {
-        imageUrl = received_message.attachments[0].payload.url;
-    }
-
-    console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
-    sendTypingAction(sender_psid, 'typing_on');
-
-    // --- AUTO IMAGE GENERATION DETECTION ---
-    const imageKeywords = ["ارسم", "صورة", "image", "draw", "picture", "رسم", "انشيء لي", "ولد لي"];
-    const isImageRequest = imageKeywords.some(k => rawText.includes(k));
-
-    // If it's an image request and NOT already starting with a command
-    if (isImageRequest && !text.startsWith('.')) {
-        const prompt = text.replace(/ارسم لي|صورة|اريد|انشيء لي|ولد لي|image|draw|picture/gi, '').trim();
-        if (prompt) {
-            callSendAPI(sender_psid, { text: `🎨 *جاري رسم:* ${prompt}...` });
-            const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true&seed=${Math.floor(Math.random() * 1000000)}&type=.jpg`;
-            return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✅ ${prompt}\nBy ${OWNER_NAME}`);
+    try {
+        if (!received_message || (!received_message.text && !received_message.attachments)) return;
+        let text = received_message.text || "";
+        let imageUrl = null;
+        if (received_message.attachments && received_message.attachments[0].type === 'image') {
+            imageUrl = received_message.attachments[0].payload.url;
         }
-    }
 
-    // YouTube Auto-Detection
-    const ytPattern = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/;
-    if (ytPattern.test(text)) {
-        callSendAPI(sender_psid, { text: "🔗 YouTube Link detected! Please wait..." });
-        const res = await savetube.download(text, '720');
-        if (res.status) {
-            return sendAttachmentAPI(sender_psid, 'video', res.result.download, `✅ *${res.result.title}*\nBy ${OWNER_NAME}`);
-        }
-    }
+        let rawText = text.toLowerCase().trim();
+        console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
+        sendTypingAction(sender_psid, 'typing_on');
 
-    let rawText = text.toLowerCase().trim();
-    let command = rawText.split(' ')[0];
-    if (command.startsWith('.')) command = command.substring(1);
-    const args = text.split(' ').slice(1);
+        // --- AUTO IMAGE ---
+        const imageKeywords = ["ارسم", "صورة", "image", "draw", "picture", "رسم", "انشيء لي", "ولد لي"];
+        const isImageRequest = imageKeywords.some(k => rawText.includes(k)) && !text.startsWith('.');
 
-    // --- STORY INTERACTION LOGIC ---
-    if (userStorySession[sender_psid] && !isNaN(rawText)) {
-        const choice = parseInt(rawText);
-        const stories = userStorySession[sender_psid];
-        if (choice >= 1 && choice <= stories.length) {
-            const selectedTitle = stories[choice - 1];
-            callSendAPI(sender_psid, { text: `⏳ جاري جلب رواية: *${selectedTitle}* كاملة...` });
-            const storyContent = await getHectormanuelAI(sender_psid, `Write the full complete story of: "${selectedTitle}" in Arabic. Make it long and interesting.`, "gpt-4o") || "Sma7 lya, error.";
-            delete userStorySession[sender_psid];
-            if (storyContent.length > 2000) {
-                const parts = storyContent.match(/[\s\S]{1,1950}/g);
-                for (let part of parts) await callSendAPI(sender_psid, { text: part });
-                return;
+        if (isImageRequest) {
+            const prompt = text.replace(/ارسم لي|صورة|اريد|انشيء لي|ولد لي|image|draw|picture/gi, '').trim();
+            if (prompt.length > 1) {
+                callSendAPI(sender_psid, { text: `🎨 *جاري رسم:* ${prompt}...` });
+                const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true&seed=${Math.floor(Math.random() * 1000000)}&type=.jpg`;
+                return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✅ ${prompt}\nBy ${OWNER_NAME}`);
             }
-            return callSendAPI(sender_psid, { text: storyContent });
         }
-    }
 
-    // --- MENU ---
-    if (['menu', 'help', 'الاوامر', 'دليل', 'المنيو'].includes(command)) {
-        const menu = `🌟 *قائمة أوامر ${config.botName}* 🌟\n\n` +
-            `👨‍💻 *المطور:* ${OWNER_NAME}\n\n` +
-            `🎨 *.imagine [prompt]* : رسم صورة\n` +
-            `✨ *.yts [name]* : بحث يوتيوب\n` +
-            `🎵 *.ytmp3 [link]* : تحميل أوديو\n` +
-            `🎬 *.ytmp4 [link]* : تحميل فيديو\n` +
-            `🕌 *.quran [1-114/Name]* : قراءة السورة\n` +
-            `📖 *.riwaya* : اختيار رواية من القائمة\n` +
-            `👤 *.owner* : حسابات المطور\n\n` +
-            `⚡ *تم التطوير بواسطة ${OWNER_NAME}*`;
-        return callSendAPI(sender_psid, { text: menu });
-    }
+        // YouTube Auto-Detection (JUST a link)
+        const ytPattern = /^(https?:\/\/)?(www\.)?(youtu\.be\/|youtube\.com\/)([\w-]{11})[^\s]*$/;
+        if (ytPattern.test(text.trim())) {
+            callSendAPI(sender_psid, { text: "🔗 YouTube Link detected! Please wait..." });
+            const res = await savetube.download(text.trim(), '720');
+            if (res.status) {
+                return sendAttachmentAPI(sender_psid, 'video', res.result.download, `✅ *${res.result.title}*\nBy ${OWNER_NAME}`);
+            } else {
+                return callSendAPI(sender_psid, { text: "❌ فشل تحميل الفيديو. حاول مرة أخرى برابط آخر." });
+            }
+        }
 
-    // --- QU'RAN ---
-    if (command === 'quran' || command === 'قرآن' || command === 'قران') {
-        const surahInput = args.join('').toLowerCase();
-        if (!surahInput) return callSendAPI(sender_psid, { text: "Usage: .quran [1-114 or Name]" });
-        callSendAPI(sender_psid, { text: "📖 جاري جلب السورة..." });
-        const qData = await getQuranSurahText(surahInput);
-        if (qData) {
-            await callSendAPI(sender_psid, { text: qData.title });
+        let command = rawText.split(' ')[0];
+        if (command.startsWith('.')) command = command.substring(1);
+        const args = text.split(' ').slice(1);
 
-            // Split by verses to avoid cutting words
-            const verses = qData.content.split(' ۝ ');
-            let currentMessage = "";
-
-            for (let i = 0; i < verses.length; i++) {
-                let verse = verses[i] + (i < verses.length - 1 ? " ۝ " : "");
-                if ((currentMessage + verse).length > 1950) {
-                    await callSendAPI(sender_psid, { text: currentMessage.trim() });
-                    currentMessage = verse;
-                } else {
-                    currentMessage += verse;
+        // --- STORY INTERACTION LOGIC ---
+        if (userStorySession[sender_psid] && !isNaN(rawText)) {
+            const choice = parseInt(rawText);
+            const stories = userStorySession[sender_psid];
+            if (choice >= 1 && choice <= stories.length) {
+                const selectedTitle = stories[choice - 1];
+                callSendAPI(sender_psid, { text: `⏳ جاري جلب رواية: *${selectedTitle}* كاملة...` });
+                const storyContent = await getHectormanuelAI(sender_psid, `Write the full complete story of: "${selectedTitle}" in Arabic. Make it long and interesting.`, "gpt-4o") || "Sma7 lya, error.";
+                delete userStorySession[sender_psid];
+                if (storyContent.length > 2000) {
+                    const parts = storyContent.match(/[\s\S]{1,1950}/g);
+                    for (let part of parts) await callSendAPI(sender_psid, { text: part });
+                    return;
                 }
+                return callSendAPI(sender_psid, { text: storyContent });
             }
-            if (currentMessage) await callSendAPI(sender_psid, { text: currentMessage.trim() });
-            return callSendAPI(sender_psid, { text: "✅ *صدق الله العظيم*" });
         }
-        return callSendAPI(sender_psid, { text: "Invalid Surah Name/Number." });
-    }
 
-    // --- IMAGINE ---
-    if (command === 'imagine' || command === 'رسم') {
-        const prompt = args.join(' ');
-        if (!prompt) return callSendAPI(sender_psid, { text: "Send a description! Example: .imagine cat" });
-        callSendAPI(sender_psid, { text: "🎨 Making your art..." });
-        const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true&seed=${Math.floor(Math.random() * 1000000)}&type=.jpg`;
-        return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✨ *Generated Art:* ${prompt}\nBy ${OWNER_NAME}`);
-    }
-
-    // --- YTS (YouTube Search - Text Mode) ---
-    if (command === 'yts' || command === 'ytsearch') {
-        const query = args.join(' ');
-        if (!query) return callSendAPI(sender_psid, { text: "Usage: .yts [song/video name]" });
-        callSendAPI(sender_psid, { text: `🔍 Searching YouTube for: "${query}"...` });
-        try {
-            const results = await yts(query);
-            const videos = results.videos.slice(0, 10);
-            if (videos.length === 0) return callSendAPI(sender_psid, { text: "❌ No results found on YouTube." });
-
-            let msg = `🔍 *YouTube Search Results:*\n\n`;
-            videos.forEach((v, i) => {
-                msg += `${i + 1}. *${v.title}*\n`;
-                msg += `🔗 ${v.url}\n`;
-                msg += `⏱️ Duration: ${v.timestamp}\n\n`;
-            });
-            msg += `💡 *To download audio:* .ytmp3 [link]\n`;
-            msg += `💡 *To download video:* .ytmp4 [link]`;
-
-            return callSendAPI(sender_psid, { text: msg });
-        } catch (e) {
-            return callSendAPI(sender_psid, { text: "❌ Search Error. Try again later." });
+        // --- MENU ---
+        if (['menu', 'help', 'الاوامر', 'دليل', 'المنيو'].includes(command)) {
+            const menu = `🌟 *قائمة أوامر ${config.botName}* 🌟\n\n` +
+                `👨‍💻 *المطور:* ${OWNER_NAME}\n\n` +
+                `🎨 *.imagine [prompt]* : رسم صورة\n` +
+                `✨ *.yts [name]* : بحث يوتيوب\n` +
+                `🎵 *.ytmp3 [link]* : تحميل أوديو\n` +
+                `🎬 *.ytmp4 [link]* : تحميل فيديو\n` +
+                `🕌 *.quran [Name/Number]* : نص القرآن\n` +
+                `🎧 *.quranmp3 [Name]* : صوت القرآن\n` +
+                `📖 *.riwaya* : روايات\n` +
+                `👤 *.owner* : المطور\n\n` +
+                `⚡ *تم التطوير بواسطة ${OWNER_NAME}*`;
+            return callSendAPI(sender_psid, { text: menu });
         }
-    }
 
-    // --- YT DOWNLOADERS (MP3 & MP4) ---
-    if (command === 'ytmp3' || command === 'ytmp4') {
-        const url = args[0];
-        if (!url) return callSendAPI(sender_psid, { text: `Usage: .${command} [YouTube Link]` });
-        const format = command === 'ytmp3' ? 'mp3' : '720';
-        callSendAPI(sender_psid, { text: `⏳ Analyzing Link... Please wait.` });
-        const res = await savetube.download(url, format);
-        if (res.status) {
-            return sendAttachmentAPI(sender_psid, command === 'ytmp3' ? 'audio' : 'video', res.result.download, `✅ *${res.result.title}*\nBy ${OWNER_NAME}`);
+        // --- QU'RAN ---
+        if (command === 'quran' || command === 'قرآن' || command === 'قران') {
+            const surahInput = args.join('').toLowerCase();
+            if (!surahInput) return callSendAPI(sender_psid, { text: "Usage: .quran [1-114 or Name]" });
+            callSendAPI(sender_psid, { text: "📖 جاري جلب السورة..." });
+            const qData = await getQuranSurahText(surahInput);
+            if (qData) {
+                await callSendAPI(sender_psid, { text: qData.title });
+
+                // Split by verses to avoid cutting words
+                const verses = qData.content.split(' ۝ ');
+                let currentMessage = "";
+
+                for (let i = 0; i < verses.length; i++) {
+                    let verse = verses[i] + (i < verses.length - 1 ? " ۝ " : "");
+                    if ((currentMessage + verse).length > 1950) {
+                        await callSendAPI(sender_psid, { text: currentMessage.trim() });
+                        currentMessage = verse;
+                    } else {
+                        currentMessage += verse;
+                    }
+                }
+                if (currentMessage) await callSendAPI(sender_psid, { text: currentMessage.trim() });
+                return callSendAPI(sender_psid, { text: "✅ *صدق الله العظيم*" });
+            }
+            return callSendAPI(sender_psid, { text: "Invalid Surah Name/Number." });
         }
-        return callSendAPI(sender_psid, { text: "❌ Error: Could not process this video. Try another link." });
-    }
 
-    // --- RIWAYA (LIST MODE) ---
-    if (command === 'riwaya' || command === 'رواية' || command === 'قصة') {
-        callSendAPI(sender_psid, { text: "⏳ جاري تحضير قائمة الروايات لك..." });
-        const storyList = await getHectormanuelAI(sender_psid, "Suggest 5 interesting and diverse short story titles in Arabic. Just list the titles numbered 1 to 5.", "gpt-4o-mini");
-        if (storyList) {
-            const titles = storyList.split('\n').map(t => t.replace(/^\d+[\.\)]\s*/, '').trim()).filter(t => t);
-            userStorySession[sender_psid] = titles;
-            return callSendAPI(sender_psid, { text: `📖 *اختر رواية من القائمة (أرسل الرقم):*\n\n${storyList}\n\n*بواسطة ${OWNER_NAME}*` });
+        // --- QURAN MP3 ---
+        if (command === 'quranmp3' || command === 'صوت_قرآن') {
+            const query = args.join(' ');
+            if (!query) return callSendAPI(sender_psid, { text: "Usage: .quranmp3 [Surah Name]" });
+            callSendAPI(sender_psid, { text: "🎵 جاري البحث عن الصوت..." });
+            try {
+                const results = await yts(`surah ${query} full audio`);
+                const video = results.videos[0];
+                if (!video) return callSendAPI(sender_psid, { text: "❌ لم يتم العثور على الصوت." });
+                callSendAPI(sender_psid, { text: `⏳ جاري تحميل: ${video.title}...` });
+                const res = await savetube.download(video.url, 'mp3');
+                if (res.status) {
+                    return sendAttachmentAPI(sender_psid, 'audio', res.result.download, `✅ ${video.title}\nBy ${OWNER_NAME}`);
+                }
+                return callSendAPI(sender_psid, { text: "❌ خطأ في التحميل." });
+            } catch (e) { return callSendAPI(sender_psid, { text: "❌ خطأ." }); }
         }
-        return callSendAPI(sender_psid, { text: "Sma7 lya, error." });
+
+        // --- IMAGINE ---
+        if (command === 'imagine' || command === 'رسم') {
+            const prompt = args.join(' ');
+            if (!prompt) return callSendAPI(sender_psid, { text: "Send a description! Example: .imagine cat" });
+            callSendAPI(sender_psid, { text: "🎨 Making your art..." });
+            const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true&seed=${Math.floor(Math.random() * 1000000)}&type=.jpg`;
+            return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✨ *Generated Art:* ${prompt}\nBy ${OWNER_NAME}`);
+        }
+
+        // --- YTS (YouTube Search - Text Mode) ---
+        if (command === 'yts' || command === 'ytsearch') {
+            const query = args.join(' ');
+            if (!query) return callSendAPI(sender_psid, { text: "Usage: .yts [song/video name]" });
+            callSendAPI(sender_psid, { text: `🔍 Searching YouTube for: "${query}"...` });
+            try {
+                const results = await yts(query);
+                const videos = results.videos.slice(0, 10);
+                if (videos.length === 0) return callSendAPI(sender_psid, { text: "❌ No results found on YouTube." });
+
+                let msg = `🔍 *YouTube Search Results:*\n\n`;
+                videos.forEach((v, i) => {
+                    msg += `${i + 1}. *${v.title}*\n`;
+                    msg += `🔗 ${v.url}\n`;
+                    msg += `⏱️ Duration: ${v.timestamp}\n\n`;
+                });
+                msg += `💡 *To download audio:* .ytmp3 [link]\n`;
+                msg += `💡 *To download video:* .ytmp4 [link]`;
+
+                return callSendAPI(sender_psid, { text: msg });
+            } catch (e) {
+                return callSendAPI(sender_psid, { text: "❌ Search Error. Try again later." });
+            }
+        }
+
+        // --- YT DOWNLOADERS (MP3 & MP4) ---
+        if (command === 'ytmp3' || command === 'ytmp4') {
+            const url = args[0];
+            if (!url) return callSendAPI(sender_psid, { text: `Usage: .${command} [YouTube Link]` });
+            const format = command === 'ytmp3' ? 'mp3' : '720';
+            callSendAPI(sender_psid, { text: `⏳ Analyzing Link... Please wait.` });
+            const res = await savetube.download(url, format);
+            if (res.status) {
+                return sendAttachmentAPI(sender_psid, command === 'ytmp3' ? 'audio' : 'video', res.result.download, `✅ *${res.result.title}*\nBy ${OWNER_NAME}`);
+            }
+            return callSendAPI(sender_psid, { text: "❌ Error: Could not process this video. Try another link." });
+        }
+
+        // --- RIWAYA (LIST MODE) ---
+        if (command === 'riwaya' || command === 'رواية' || command === 'قصة') {
+            callSendAPI(sender_psid, { text: "⏳ جاري تحضير قائمة الروايات لك..." });
+            const storyList = await getHectormanuelAI(sender_psid, "Suggest 5 interesting and diverse short story titles in Arabic. Just list the titles numbered 1 to 5.", "gpt-4o-mini");
+            if (storyList) {
+                const titles = storyList.split('\n').map(t => t.replace(/^\d+[\.\)]\s*/, '').trim()).filter(t => t);
+                userStorySession[sender_psid] = titles;
+                return callSendAPI(sender_psid, { text: `📖 *اختر رواية من القائمة (أرسل الرقم):*\n\n${storyList}\n\n*بواسطة ${OWNER_NAME}*` });
+            }
+            return callSendAPI(sender_psid, { text: "Sma7 lya, error." });
+        }
+
+        // --- OWNER ---
+        if (command === 'owner' || command === 'مطور') {
+            return callSendAPI(sender_psid, { text: `👤 *Developer:* ${OWNER_NAME}\n📸 Instagram: ${config.social.instagram}\n💬 WhatsApp: ${config.social.whatsapp}` });
+        }
+
+        // --- FALLBACK AI ---
+        let aiReply = imageUrl ? await getGeminiResponse(sender_psid, text, imageUrl) : (await getLuminAIResponse(sender_psid, text) || await getHectormanuelAI(sender_psid, text));
+        if (!aiReply) aiReply = "Sma7 lya, mfhmtch.";
+
+        sendTypingAction(sender_psid, 'typing_off');
+        callSendAPI(sender_psid, { text: aiReply });
+    } catch (error) {
+        console.error(chalk.red("[FATAL ERROR]:"), error);
+        sendTypingAction(sender_psid, 'typing_off');
     }
-
-    // --- OWNER ---
-    if (command === 'owner' || command === 'مطور') {
-        return callSendAPI(sender_psid, { text: `👤 *Developer:* ${OWNER_NAME}\n📸 Instagram: ${config.social.instagram}\n💬 WhatsApp: ${config.social.whatsapp}` });
-    }
-
-    // --- FALLBACK AI ---
-    let aiReply = imageUrl ? await getGeminiResponse(sender_psid, text, imageUrl) : (await getLuminAIResponse(sender_psid, text) || await getHectormanuelAI(sender_psid, text));
-    if (!aiReply) aiReply = "Sma7 lya, mfhmtch.";
-
-    sendTypingAction(sender_psid, 'typing_off');
-    callSendAPI(sender_psid, { text: aiReply });
 }
 
 function sendTypingAction(sender_psid, action) {
