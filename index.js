@@ -148,22 +148,20 @@ async function handleMessage(sender_psid, received_message) {
         console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
         sendTypingAction(sender_psid, 'typing_on');
 
-        // --- AUTO IMAGE ---
-        const imageKeywords = ["ارسم", "صورة", "image", "draw", "picture", "رسم", "انشيء لي", "ولد لي"];
-        const isImageRequest = imageKeywords.some(k => rawText.includes(k)) && !text.startsWith('.');
-
         if (isImageRequest) {
             const prompt = text.replace(/ارسم لي|صورة|اريد|انشيء لي|ولد لي|image|draw|picture/gi, '').trim();
             if (prompt.length > 1) {
+                console.log(chalk.yellow(`[DEBUG] Triggering AI Image for: ${prompt}`));
                 callSendAPI(sender_psid, { text: `🎨 *جاري رسم:* ${prompt}...` });
-                const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true&seed=${Math.floor(Math.random() * 1000000)}&type=.jpg`;
+                const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true&seed=${Math.floor(Math.random() * 1000000)}`;
                 return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✅ ${prompt}\nBy ${OWNER_NAME}`);
             }
         }
 
         // YouTube Auto-Detection (JUST a link)
-        const ytPattern = /^(https?:\/\/)?(www\.)?(youtu\.be\/|youtube\.com\/)([\w-]{11})[^\s]*$/;
-        if (ytPattern.test(text.trim())) {
+        const ytPattern = /(?:https?:\/\/)?(?:www\.)?(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/;
+        if (ytPattern.test(text.trim()) && !text.startsWith('.')) {
+            console.log(chalk.yellow(`[DEBUG] YT Link Auto-Detected`));
             callSendAPI(sender_psid, { text: "🔗 YouTube Link detected! Please wait..." });
             const res = await savetube.download(text.trim(), '720');
             if (res.status) {
@@ -173,8 +171,7 @@ async function handleMessage(sender_psid, received_message) {
             }
         }
 
-        let command = rawText.split(' ')[0];
-        if (command.startsWith('.')) command = command.substring(1);
+        const command = rawText.split(' ')[0].startsWith('.') ? rawText.split(' ')[0].substring(1) : "";
         const args = text.split(' ').slice(1);
 
         // --- STORY INTERACTION LOGIC ---
@@ -199,6 +196,7 @@ async function handleMessage(sender_psid, received_message) {
         if (['menu', 'help', 'الاوامر', 'دليل', 'المنيو'].includes(command)) {
             const menu = `🌟 *قائمة أوامر ${config.botName}* 🌟\n\n` +
                 `👨‍💻 *المطور:* ${OWNER_NAME}\n\n` +
+                `🎵 *.play [song]* : تحميل سريع للأغاني\n` +
                 `🎨 *.imagine [prompt]* : رسم صورة\n` +
                 `✨ *.yts [name]* : بحث يوتيوب\n` +
                 `🎵 *.ytmp3 [link]* : تحميل أوديو\n` +
@@ -255,6 +253,24 @@ async function handleMessage(sender_psid, received_message) {
                 }
                 return callSendAPI(sender_psid, { text: "❌ خطأ في التحميل." });
             } catch (e) { return callSendAPI(sender_psid, { text: "❌ خطأ." }); }
+        }
+
+        // --- PLAY (Search & Download Audio) ---
+        if (command === 'play' || command === 'تشغيل' || command === 'اغنية') {
+            const query = args.join(' ');
+            if (!query) return callSendAPI(sender_psid, { text: "Usage: .play [song name]" });
+            callSendAPI(sender_psid, { text: `🎵 جاري البحث عن: *${query}*...` });
+            try {
+                const results = await yts(query);
+                const video = results.videos[0];
+                if (!video) return callSendAPI(sender_psid, { text: "❌ لم يتم العثور على نتائج." });
+                callSendAPI(sender_psid, { text: `⏳ جاري معالجة: *${video.title}*...` });
+                const res = await savetube.download(video.url, 'mp3');
+                if (res.status) {
+                    return sendAttachmentAPI(sender_psid, 'audio', res.result.download, `✅ *${video.title}*\nBy ${OWNER_NAME}`);
+                }
+                return callSendAPI(sender_psid, { text: "❌ فشل تحميل الصوت." });
+            } catch (e) { return callSendAPI(sender_psid, { text: "❌ حدث خطأ." }); }
         }
 
         // --- IMAGINE ---
