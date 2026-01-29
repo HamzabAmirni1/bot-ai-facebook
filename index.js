@@ -139,12 +139,12 @@ async function handleMessage(sender_psid, received_message) {
     try {
         if (!received_message || (!received_message.text && !received_message.attachments)) return;
         let text = received_message.text || "";
+        let rawText = text.toLowerCase().trim();
         let imageUrl = null;
         if (received_message.attachments && received_message.attachments[0].type === 'image') {
             imageUrl = received_message.attachments[0].payload.url;
         }
 
-        let rawText = text.toLowerCase().trim();
         console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
         sendTypingAction(sender_psid, 'typing_on');
 
