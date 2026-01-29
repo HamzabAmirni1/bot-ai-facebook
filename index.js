@@ -27,6 +27,7 @@ const surahMap = {
 };
 
 const truncate = (str, len) => str.length > len ? str.substring(0, len - 3) + "..." : str;
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- SAVETUBE LOGIC ---
 const savetube = {
@@ -230,6 +231,7 @@ async function handleMessage(sender_psid, received_message) {
                     let verse = verses[i] + (i < verses.length - 1 ? " ۝ " : "");
                     if ((currentMessage + verse).length > 1950) {
                         await callSendAPI(sender_psid, { text: currentMessage.trim() });
+                        await delay(1000); // 1-second delay between long messages
                         currentMessage = verse;
                     } else {
                         currentMessage += verse;
@@ -363,9 +365,10 @@ function callSendAPI(sender_psid, response) {
 }
 
 async function sendAttachmentAPI(sender_psid, type, url, caption) {
+    console.log(chalk.yellow(`[DEBUG] Attempting to send ${type}: ${url}`));
     try {
         const attachmentType = type === 'audio' ? 'audio' : (type === 'video' ? 'video' : 'image');
-        await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${config.PAGE_ACCESS_TOKEN}`, {
+        const res = await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${config.PAGE_ACCESS_TOKEN}`, {
             recipient: { id: sender_psid },
             message: {
                 attachment: {
@@ -377,17 +380,27 @@ async function sendAttachmentAPI(sender_psid, type, url, caption) {
                 }
             }
         });
+        console.log(chalk.green(`[DEBUG] Attachment sent successfully`));
         if (caption) await callSendAPI(sender_psid, { text: caption });
     } catch (e) {
-        console.error(chalk.red(`[ERROR] sendAttachmentAPI: ${e.response?.data?.error?.message || e.message}`));
-        return callSendAPI(sender_psid, { text: `${caption}\n\n🔗 Direct Link:\n${url}` });
+        const errorMsg = e.response?.data?.error?.message || e.message;
+        console.error(chalk.red(`[ERROR] sendAttachmentAPI failed: ${errorMsg}`));
+
+        // Fallback: Send caption and direct link if attachment fails
+        let fallbackText = caption ? `${caption}\n\n` : "";
+        fallbackText += `⚠️ *Facebook system error: Attachment could not be sent directly.*\n\n🔗 *Click here to download/view:* \n${url}`;
+
+        return callSendAPI(sender_psid, { text: fallbackText });
     }
 }
 
-app.get('/health', (req, res) => res.status(200).send("OK"));
+app.get('/', (req, res) => res.status(200).send("Bot is Running! (حمزة اعمرني)"));
+
 setInterval(() => {
-    const url = config.publicUrl;
-    if (url) axios.get(url).catch(() => { });
-}, 2 * 60 * 1000);
+    const url = process.env.PUBLIC_URL || config.publicUrl;
+    if (url) {
+        axios.get(url).then(() => console.log(chalk.gray(`[DEBUG] Heartbeat sent`))).catch(() => { });
+    }
+}, 5 * 60 * 1000); // Pulse every 5 minutes
 
 app.listen(process.env.PORT || 8080, () => console.log(chalk.cyan(`Bot starting...`)));
