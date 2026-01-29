@@ -142,6 +142,20 @@ async function handleMessage(sender_psid, received_message) {
     console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
     sendTypingAction(sender_psid, 'typing_on');
 
+    // --- AUTO IMAGE GENERATION DETECTION ---
+    const imageKeywords = ["ارسم", "صورة", "image", "draw", "picture", "رسم", "انشيء لي", "ولد لي"];
+    const isImageRequest = imageKeywords.some(k => rawText.includes(k));
+
+    // If it's an image request and NOT already starting with a command
+    if (isImageRequest && !text.startsWith('.')) {
+        const prompt = text.replace(/ارسم لي|صورة|اريد|انشيء لي|ولد لي|image|draw|picture/gi, '').trim();
+        if (prompt) {
+            callSendAPI(sender_psid, { text: `🎨 *جاري رسم:* ${prompt}...` });
+            const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true&seed=${Math.floor(Math.random() * 1000000)}&type=.jpg`;
+            return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✅ ${prompt}\nBy ${OWNER_NAME}`);
+        }
+    }
+
     // YouTube Auto-Detection
     const ytPattern = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/;
     if (ytPattern.test(text)) {
@@ -216,36 +230,26 @@ async function handleMessage(sender_psid, received_message) {
         return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✨ *Generated Art:* ${prompt}\nBy ${OWNER_NAME}`);
     }
 
-    // --- YTS (YouTube Search Carousel) ---
+    // --- YTS (YouTube Search - Text Mode) ---
     if (command === 'yts' || command === 'ytsearch') {
         const query = args.join(' ');
         if (!query) return callSendAPI(sender_psid, { text: "Usage: .yts [song/video name]" });
         callSendAPI(sender_psid, { text: `🔍 Searching YouTube for: "${query}"...` });
         try {
             const results = await yts(query);
-            const videos = results.videos.slice(0, 7);
+            const videos = results.videos.slice(0, 10);
             if (videos.length === 0) return callSendAPI(sender_psid, { text: "❌ No results found on YouTube." });
 
-            const elements = videos.map(v => ({
-                title: truncate(v.title, 80),
-                image_url: v.thumbnail,
-                subtitle: truncate(`Channel: ${v.author.name} | Duration: ${v.timestamp}`, 80),
-                buttons: [
-                    { type: "web_url", url: v.url, title: "📺 Watch" },
-                    { type: "postback", title: "🎵 MP3", payload: `.ytmp3 ${v.url}` },
-                    { type: "postback", title: "🎬 MP4", payload: `.ytmp4 ${v.url}` }
-                ]
-            }));
-
-            return callSendAPI(sender_psid, {
-                attachment: {
-                    type: "template",
-                    payload: {
-                        template_type: "generic",
-                        elements: elements
-                    }
-                }
+            let msg = `🔍 *YouTube Search Results:*\n\n`;
+            videos.forEach((v, i) => {
+                msg += `${i + 1}. *${v.title}*\n`;
+                msg += `🔗 ${v.url}\n`;
+                msg += `⏱️ Duration: ${v.timestamp}\n\n`;
             });
+            msg += `💡 *To download audio:* .ytmp3 [link]\n`;
+            msg += `💡 *To download video:* .ytmp4 [link]`;
+
+            return callSendAPI(sender_psid, { text: msg });
         } catch (e) {
             return callSendAPI(sender_psid, { text: "❌ Search Error. Try again later." });
         }
