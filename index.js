@@ -148,6 +148,10 @@ async function handleMessage(sender_psid, received_message) {
         console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
         sendTypingAction(sender_psid, 'typing_on');
 
+        // --- AUTO IMAGE ---
+        const imageKeywords = ["ارسم", "صورة", "image", "draw", "picture", "رسم", "انشيء لي", "ولد لي"];
+        const isImageRequest = imageKeywords.some(k => rawText.includes(k)) && !text.startsWith('.');
+
         if (isImageRequest) {
             const prompt = text.replace(/ارسم لي|صورة|اريد|انشيء لي|ولد لي|image|draw|picture/gi, '').trim();
             if (prompt.length > 1) {
