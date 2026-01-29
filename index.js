@@ -17,11 +17,23 @@ const systemPromptText = `You are ${config.botName}, a sophisticated AI assistan
 
 // --- AI FUNCTIONS ---
 
-async function getHectormanuelAI(senderId, message, model = "gpt-4o") {
+async function getLuminAIResponse(senderId, message) {
+    try {
+        const { data } = await axios.post("https://luminai.my.id/", {
+            content: systemPromptText + "\n\nUser: " + message,
+            user: senderId,
+        }, { timeout: 8000 }); // Fast 8s timeout
+        return data.result || null;
+    } catch (error) {
+        return null;
+    }
+}
+
+async function getHectormanuelAI(senderId, message, model = "gpt-4o-mini") {
     try {
         const { data } = await axios.get(
             `https://all-in-1-ais.officialhectormanuel.workers.dev/?query=${encodeURIComponent(systemPromptText + "\n\nUser: " + message)}&model=${model}`,
-            { timeout: 15000 }
+            { timeout: 8000 } // Fast 8s timeout
         );
         if (data && data.success && data.message?.content) {
             return data.message.content;
@@ -39,7 +51,6 @@ async function getGeminiResponse(senderId, text, imageUrl = null) {
         const contents = [{
             parts: [{ text: systemPromptText + "\n\nUser: " + text }]
         }];
-
         if (imageUrl) {
             const imageRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
             contents[0].parts.push({
@@ -49,22 +60,9 @@ async function getGeminiResponse(senderId, text, imageUrl = null) {
                 }
             });
         }
-
-        const res = await axios.post(url, { contents }, { timeout: 20000 });
+        const res = await axios.post(url, { contents }, { timeout: 15000 });
         return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
     } catch (e) {
-        return null;
-    }
-}
-
-async function getLuminAIResponse(senderId, message) {
-    try {
-        const { data } = await axios.post("https://luminai.my.id/", {
-            content: systemPromptText + "\n\nUser: " + message,
-            user: senderId,
-        }, { timeout: 12000 });
-        return data.result || null;
-    } catch (error) {
         return null;
     }
 }
@@ -73,22 +71,9 @@ async function getAIDEVResponse(message) {
     try {
         const { data } = await axios.get(
             `https://api.maher-zubair.tech/ai/chatgpt?q=${encodeURIComponent(message)}`,
-            { timeout: 12000 }
+            { timeout: 8000 }
         );
         return data.result || null;
-    } catch (error) {
-        return null;
-    }
-}
-
-async function getPollinationsResponse(message) {
-    try {
-        const { data } = await axios.post("https://text.pollinations.ai/openai", {
-            messages: [{ role: "system", content: systemPromptText }, { role: "user", content: message }],
-            model: "openai",
-            seed: Math.floor(Math.random() * 1000000),
-        }, { timeout: 15000 });
-        return data.choices?.[0]?.message?.content || (typeof data === "string" ? data : null);
     } catch (error) {
         return null;
     }
@@ -97,35 +82,16 @@ async function getPollinationsResponse(message) {
 // --- KEEP-ALIVE SYSTEM ---
 
 app.get('/', (req, res) => {
-    // Auto-detect Public URL
-    const protocol = req.headers["x-forwarded-proto"] || "http";
-    const host = req.headers.host;
-    if (host && !host.includes("127.0.0.1") && !host.includes("localhost")) {
-        const detectedUrl = `${protocol}://${host}`;
-        if (!config.publicUrl || config.publicUrl.includes("example.com")) {
-            config.publicUrl = detectedUrl;
-            try {
-                fs.writeFileSync(path.join(__dirname, 'server_url.json'), JSON.stringify({ url: detectedUrl }));
-            } catch (e) { }
-        }
-    }
     res.json({ status: "running", bot: config.botName, url: config.publicUrl });
 });
 
 app.get('/health', (req, res) => res.status(200).send("OK"));
 
-// Self-ping interval (Every 2 minutes)
 setInterval(() => {
     const url = config.publicUrl || (function () {
-        try {
-            return JSON.parse(fs.readFileSync(path.join(__dirname, 'server_url.json'))).url;
-        } catch (e) { return null; }
+        try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'server_url.json'))).url; } catch (e) { return null; }
     })();
-
-    if (url) {
-        axios.get(url).catch(() => { });
-        console.log(chalk.gray(`[KEEP-ALIVE] Pinged ${url}`));
-    }
+    if (url) axios.get(url).catch(() => { });
 }, 2 * 60 * 1000);
 
 // --- FACEBOOK MESSENGER LOGIC ---
@@ -148,7 +114,6 @@ app.post('/webhook', (req, res) => {
             if (!entry.messaging) return;
             let webhook_event = entry.messaging[0];
             let sender_psid = webhook_event.sender.id;
-
             if (webhook_event.message) {
                 handleMessage(sender_psid, webhook_event.message);
             }
@@ -163,7 +128,9 @@ async function handleMessage(sender_psid, received_message) {
     let text = received_message.text || "";
     let imageUrl = null;
 
-    // Check for images
+    // Show typing indicator
+    sendTypingAction(sender_psid, 'typing_on');
+
     if (received_message.attachments && received_message.attachments[0].type === 'image') {
         imageUrl = received_message.attachments[0].payload.url;
         if (!text) text = "Describe this image";
@@ -174,51 +141,51 @@ async function handleMessage(sender_psid, received_message) {
     // 1. YouTube Search
     if (text.toLowerCase().startsWith(".yts") || text.toLowerCase().startsWith("يتس")) {
         const query = text.split(" ").slice(1).join(" ");
-        if (!query) return callSendAPI(sender_psid, { text: "Goulli chnou n9elleb 3lih f YouTube? Mital: .yts song name" });
-
+        if (!query) return callSendAPI(sender_psid, { text: "Goulli chnou n9elleb 3lih f YouTube?" });
         try {
             const search = await yts(query);
             const videos = search.videos.slice(0, 5);
-            let resultText = `🎥 *Results for:* ${query}\n\n`;
-            videos.forEach((v, i) => {
-                resultText += `${i + 1}. *${v.title}*\n🔗 ${v.url}\n\n`;
-            });
+            let resultText = `🎥 *Results:* ${query}\n\n`;
+            videos.forEach((v, i) => resultText += `${i + 1}. *${v.title}*\n🔗 ${v.url}\n\n`);
             return callSendAPI(sender_psid, { text: resultText });
         } catch (e) {
-            return callSendAPI(sender_psid, { text: "Sma7 lya, wa9e3 mochkil f YouTube." });
+            return callSendAPI(sender_psid, { text: "Wa9e3 mochkil f YouTube search." });
         }
     }
 
     // 2. AI Response
     let aiReply = null;
-
     if (imageUrl) {
         aiReply = await getGeminiResponse(sender_psid, text, imageUrl);
-        if (!aiReply) aiReply = "Sma7 lya, ma3ndich Gemini API key bach n9ra l-tsawer. Sift lya ghir message b l-ktiba.";
+        if (!aiReply) aiReply = "Sma7 lya, ma3ndich Gemini API bach n9ra l-tsawer.";
     } else {
-        // Text Fallbacks
-        aiReply = await getHectormanuelAI(sender_psid, text, "gpt-4o")
+        // Optimized: Try fastest models first with short timeouts
+        aiReply = await getLuminAIResponse(sender_psid, text)
             || await getHectormanuelAI(sender_psid, text, "gpt-4o-mini")
-            || await getLuminAIResponse(sender_psid, text)
-            || await getAIDEVResponse(text)
-            || await getPollinationsResponse(text);
+            || await getAIDEVResponse(text);
     }
 
-    if (!aiReply) aiReply = "Afwan, ma9dertch njawb 3la had l-message f had l-we9t.";
+    if (!aiReply) aiReply = "Afwan, ma9dertch njawb f had l-we9t.";
 
+    // Turn off typing and send reply
+    sendTypingAction(sender_psid, 'typing_off');
     callSendAPI(sender_psid, { text: aiReply });
 }
 
-function callSendAPI(sender_psid, response) {
-    let request_body = {
-        "recipient": { "id": sender_psid },
-        "message": response
-    };
+function sendTypingAction(sender_psid, action) {
+    axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${config.PAGE_ACCESS_TOKEN}`, {
+        recipient: { id: sender_psid },
+        sender_action: action
+    }).catch(() => { });
+}
 
-    axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${config.PAGE_ACCESS_TOKEN}`, request_body)
-        .then(() => console.log(chalk.green('Message sent!')))
-        .catch(err => console.error(chalk.red('Unable to send message: ' + (err.response?.data?.error?.message || err.message))));
+function callSendAPI(sender_psid, response) {
+    axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${config.PAGE_ACCESS_TOKEN}`, {
+        recipient: { id: sender_psid },
+        message: response
+    }).then(() => console.log(chalk.green('Message sent!')))
+        .catch(err => console.error(chalk.red('Error: ' + (err.response?.data?.error?.message || err.message))));
 }
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(chalk.cyan(`Facebook Bot Webhook is listening on port ${PORT}`)));
+app.listen(PORT, () => console.log(chalk.cyan(`Facebook Bot is listening on port ${PORT}`)));
