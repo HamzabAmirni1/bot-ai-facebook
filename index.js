@@ -10,18 +10,28 @@ const crypto = require('crypto');
 
 const app = express().use(bodyParser.json());
 
-// STRICT NAME FIX
+// --- CONFIG & BRANDING ---
 const OWNER_NAME = "حمزة اعمرني";
 config.ownerName = OWNER_NAME;
 
-const systemPromptText = `You are ${config.botName}, a sophisticated AI assistant created and developed by **${OWNER_NAME}**.
-- If someone asks who you are, say you are a smart assistant developed by the legendary developer ${OWNER_NAME}.
-- ALWAYS refer to the owner as ${OWNER_NAME}.
-- You respond fluently in: Moroccan Darija (الدارجة المغربية), Standard Arabic (العربية الفصحى), English, and French.
-- Responsably, you are friendly, helpful, and professional.
-- ALWAYS respond in the SAME language the user uses.
-- For image requests, explain they should use .imagine [description].
-- For *6 to *3, mention ${OWNER_NAME} provides VPN configs and they should use .owner to contact him.`;
+const systemPromptText = `You are ${config.botName}, a smart assistant developed by the legendary ${OWNER_NAME}.
+- You respond in Moroccan Darija, Arabic, English, or French.
+- Refer to your creator as ${OWNER_NAME}.
+- Be extremely helpful and friendly.`;
+
+const surahMap = {
+    "fatiha": 1, "fati7a": 1, "الفاتحة": 1,
+    "baqara": 2, "baqarah": 2, "البقرة": 2,
+    "imran": 3, "آل عمران": 3,
+    "nisa": 4, "nisaa": 4, "النساء": 4,
+    "maida": 5, "maidah": 5, "المائدة": 5,
+    "kahf": 18, "الكهف": 18,
+    "yasin": 36, "yaseen": 36, "يس": 36,
+    "mulk": 67, "الملك": 67,
+    "ikhlas": 112, "الاخلاص": 112,
+    "falaq": 113, "الفلق": 113,
+    "nas": 114, "الناس": 114
+};
 
 // --- SAVETUBE LOGIC ---
 const savetube = {
@@ -45,7 +55,7 @@ const savetube = {
         try {
             const idMatch = link.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/);
             const id = idMatch ? idMatch[1] : null;
-            if (!id) throw new Error("Invalid YouTube link");
+            if (!id) throw new Error("Invalid URL");
             const cdnRes = await axios.get(`${savetube.api.base}${savetube.api.cdn}`, { headers: savetube.headers });
             const cdn = cdnRes.data.cdn;
             const infoRes = await axios.post(`https://${cdn}${savetube.api.info}`, { url: `https://www.youtube.com/watch?v=${id}` }, { headers: savetube.headers });
@@ -58,15 +68,17 @@ const savetube = {
     }
 };
 
-// --- QURAN TEXT FETCHER ---
-async function getQuranSurahText(surahNumber) {
+// --- QURAN TEXT ---
+async function getQuranSurahText(surahInput) {
+    let num = parseInt(surahInput);
+    if (isNaN(num)) num = surahMap[surahInput.toLowerCase()];
+    if (!num || num < 1 || num > 114) return null;
     try {
-        const { data } = await axios.get(`https://api.alquran.cloud/v1/surah/${surahNumber}`);
-        if (data.code === 200 && data.data) {
+        const { data } = await axios.get(`https://api.alquran.cloud/v1/surah/${num}`);
+        if (data.code === 200) {
             let verses = data.data.ayahs.map(a => `${a.text} (${a.numberInSurah})`).join(' ');
             return `📖 *سورة ${data.data.name}*\n\n${verses}\n\n*صدق الله العظيم*`;
         }
-        return null;
     } catch (e) { return null; }
 }
 
@@ -126,79 +138,76 @@ async function handleMessage(sender_psid, received_message) {
     console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
     sendTypingAction(sender_psid, 'typing_on');
 
-    // 1. Automatic Link Detection
+    // YouTube Auto-Detection
     const ytPattern = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/;
     if (ytPattern.test(text)) {
-        callSendAPI(sender_psid, { text: "🔗 جاري تحضير التحميل من يوتيوب..." });
+        callSendAPI(sender_psid, { text: "🔗 YouTube Link detected! Please wait..." });
         const res = await savetube.download(text, '720');
         if (res.status) {
-            // Try to send as attachment, fallback to link
-            return sendAttachmentAPI(sender_psid, 'video', res.result.download, `✅ *${res.result.title}*\n\n*بواسطة ${OWNER_NAME}*`);
+            return sendAttachmentAPI(sender_psid, 'video', res.result.download, `✅ *${res.result.title}*\nBy ${OWNER_NAME}`);
         }
     }
 
-    const args = text.split(' ');
-    const command = args[0].toLowerCase();
+    let rawText = text.toLowerCase().trim();
+    let command = rawText.split(' ')[0];
+    if (command.startsWith('.')) command = command.substring(1);
+    const args = text.split(' ').slice(1);
 
-    // 2. Commands
-    if (['.menu', '.help', 'الاوامر', 'menu', 'دليل'].includes(command)) {
-        const menu = `🌟 *قائمة ${config.botName}* 🌟\n\n` +
+    // --- MENU ---
+    if (['menu', 'help', 'الاوامر', 'دليل', 'المنيو'].includes(command)) {
+        const menu = `🌟 *قائمة أوامر ${config.botName}* 🌟\n\n` +
             `👨‍💻 *المطور:* ${OWNER_NAME}\n\n` +
-            `🎨 *.imagine [الوصف]* : إنشاء صورة فنية\n` +
-            `✨ *.yts [الاسم]* : البحث في اليوتيوب\n` +
-            `🎵 *.ytmp3 [الرابط]* : تحميل أوديو\n` +
-            `🎬 *.ytmp4 [الرابط]* : تحميل فيديو\n` +
-            `🕌 *.quran [1-114]* : قراءة السورة كاملة\n` +
-            `📚 *.riwaya* : قصة قصيرة\n` +
-            ` *.owner* : حسابات ${OWNER_NAME}\n\n` +
-            `️ *Plugin by ${OWNER_NAME}*`;
+            `🎨 *.imagine [prompt]* : رسم صورة\n` +
+            `✨ *.yts [name]* : بحث يوتيوب\n` +
+            `🎵 *.ytmp3 [link]* : تحميل أوديو\n` +
+            `🎬 *.ytmp4 [link]* : تحميل فيديو\n` +
+            `🕌 *.quran [1-114/name]* : قراءة السورة\n` +
+            `� *.riwaya* : قصة قصيرة\n` +
+            `👤 *.owner* : حسابات المطور\n\n` +
+            `⚡ *تم التطوير بواسطة ${OWNER_NAME}*`;
         return callSendAPI(sender_psid, { text: menu });
     }
 
-    if (command === '.imagine') {
-        const prompt = args.slice(1).join(' ');
-        if (!prompt) return callSendAPI(sender_psid, { text: "اكتب وصف الصورة!" });
-        callSendAPI(sender_psid, { text: "🎨 جاري رسم الصورة..." });
-        const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true`;
-        return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✅ النتيجة لـ: ${prompt}`);
-    }
-
-    if (command === '.quran' || command === 'قرآن') {
-        const surah = args[1];
-        if (!surah || isNaN(surah) || surah < 1 || surah > 114) return callSendAPI(sender_psid, { text: "مثال: .quran 1" });
+    // --- QU'RAN ---
+    if (command === 'quran' || command === 'قرآن' || command === 'قران') {
+        const surahInput = args[0];
+        if (!surahInput) return callSendAPI(sender_psid, { text: "Usage: .quran [1-114 or Name]" });
         callSendAPI(sender_psid, { text: "📖 جاري جلب السورة..." });
-        const quranText = await getQuranSurahText(surah);
-        if (quranText) {
-            // Split if too long for one message
-            if (quranText.length > 2000) {
-                const parts = quranText.match(/[\s\S]{1,1900}/g);
+        const qText = await getQuranSurahText(surahInput);
+        if (qText) {
+            if (qText.length > 2000) {
+                const parts = qText.match(/[\s\S]{1,1900}/g);
                 for (let part of parts) await callSendAPI(sender_psid, { text: part });
                 return;
             }
-            return callSendAPI(sender_psid, { text: quranText });
+            return callSendAPI(sender_psid, { text: qText });
         }
-        return callSendAPI(sender_psid, { text: "فشل جلب السورة." });
+        return callSendAPI(sender_psid, { text: "Invalid Surah Name/Number." });
     }
 
-    if (command === '.ytmp4' || command === '.ytmp3') {
-        const url = args[1];
-        if (!url) return callSendAPI(sender_psid, { text: "حط الرابط!" });
-        const type = command === '.ytmp3' ? 'audio' : 'video';
-        callSendAPI(sender_psid, { text: "⏳ جاري المعالجة..." });
-        const res = await savetube.download(url, type === 'audio' ? 'mp3' : '720');
-        if (res.status) {
-            return sendAttachmentAPI(sender_psid, type, res.result.download, `✅ *${res.result.title}*`);
-        }
-        return callSendAPI(sender_psid, { text: "فشل التحميل." });
+    // --- IMAGINE ---
+    if (command === 'imagine' || command === 'رسم') {
+        const prompt = args.join(' ');
+        if (!prompt) return callSendAPI(sender_psid, { text: "Send a description! Example: .imagine cat" });
+        callSendAPI(sender_psid, { text: "🎨 Making your art..." });
+        const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true`;
+        return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✅ ${prompt}`);
     }
 
-    if (command === '.owner') {
-        return callSendAPI(sender_psid, { text: `👤 *المطور:* ${OWNER_NAME}\n\n📸 Instagram: ${config.social.instagram}\n WhatsApp: ${config.social.whatsapp}` });
+    // --- RIWAYA ---
+    if (command === 'riwaya' || command === 'رواية' || command === 'قصة') {
+        const story = await getHectormanuelAI(sender_psid, "Tell me a short interesting Arabic story.", "gpt-4o-mini") || "Sma7 lya, error.";
+        return callSendAPI(sender_psid, { text: `📖 *Riwaya:*\n\n${story}` });
     }
 
-    // AI Fallback
+    // --- OWNER ---
+    if (command === 'owner' || command === 'مطور') {
+        return callSendAPI(sender_psid, { text: `👤 *Developer:* ${OWNER_NAME}\n📸 Instagram: ${config.social.instagram}\n💬 WhatsApp: ${config.social.whatsapp}` });
+    }
+
+    // --- FALLBACK AI ---
     let aiReply = imageUrl ? await getGeminiResponse(sender_psid, text, imageUrl) : (await getLuminAIResponse(sender_psid, text) || await getHectormanuelAI(sender_psid, text));
-    if (!aiReply) aiReply = "Sma7 lya, mafhamtch had l-message.";
+    if (!aiReply) aiReply = "Sma7 lya, mfhmtch.";
 
     sendTypingAction(sender_psid, 'typing_off');
     callSendAPI(sender_psid, { text: aiReply });
@@ -221,14 +230,13 @@ async function sendAttachmentAPI(sender_psid, type, url, caption) {
         });
         if (caption) await callSendAPI(sender_psid, { text: caption });
     } catch (e) {
-        // Fallback to sending just the link if attachment fails (FB limits)
-        return callSendAPI(sender_psid, { text: `${caption}\n\n🔗 رابط مباشر:\n${url}` });
+        return callSendAPI(sender_psid, { text: `${caption}\n\n🔗 Direct Link:\n${url}` });
     }
 }
 
 app.get('/health', (req, res) => res.status(200).send("OK"));
 setInterval(() => {
-    const url = config.publicUrl || (function () { try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'server_url.json'))).url; } catch (e) { return null; } })();
+    const url = config.publicUrl;
     if (url) axios.get(url).catch(() => { });
 }, 2 * 60 * 1000);
 
