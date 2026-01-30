@@ -66,15 +66,17 @@ const downloader = {
 };
 
 // --- QURAN TEXT ---
+// --- QURAN TEXT ---
 async function getQuranSurahText(surahInput) {
     let num = parseInt(surahInput);
     if (isNaN(num)) num = surahMap[surahInput.toLowerCase().replace(/\s+/g, '')];
     if (!num || num < 1 || num > 114) return null;
     try {
-        const { data } = await axios.get(`https://api.alquran.cloud/v1/surah/${num}`);
+        const { data } = await axios.get(`https://api.alquran.cloud/v1/surah/${num}/quran-simple`);
         if (data.code === 200) {
             let surahName = data.data.name;
-            let ayahs = data.data.ayahs.map(a => `${a.text} ۝ ${a.numberInSurah}`).join(' ');
+            // Format: RLM + Text + ۝ Number + NewLine
+            const ayahs = data.data.ayahs.map(a => `\u200F${a.text} ۝${a.numberInSurah}`).join('\n\n');
             return {
                 title: `📖 *سورة ${surahName}*`,
                 content: ayahs
@@ -284,15 +286,15 @@ async function handleMessage(sender_psid, received_message) {
             if (qData) {
                 await callSendAPI(sender_psid, { text: qData.title });
 
-                // Split by verses to avoid cutting words
-                const verses = qData.content.split(' ۝ ');
+                // Using new formatting with \n\n
+                const verses = qData.content.split('\n\n');
                 let currentMessage = "";
 
                 for (let i = 0; i < verses.length; i++) {
-                    let verse = verses[i] + (i < verses.length - 1 ? " ۝ " : "");
+                    let verse = verses[i] + "\n\n";
                     if ((currentMessage + verse).length > 1950) {
                         await callSendAPI(sender_psid, { text: currentMessage.trim() });
-                        await delay(1000); // 1-second delay between long messages
+                        await delay(500);
                         currentMessage = verse;
                     } else {
                         currentMessage += verse;
