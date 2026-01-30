@@ -29,8 +29,9 @@ const systemPromptText = `You are ${config.botName}, a smart assistant developed
   8. Auto-detects YouTube links to download them.
   9. Auto-detects "draw/رسم" to generate images.`;
 
-// Temporary Session Memory for Stories
+// Temporary Session Memory for Stories & Images
 const userStorySession = {};
+const userImageSession = {};
 
 const surahMap = {
     "fatiha": 1, "fati7a": 1, "الفاتحة": 1, "baqara": 2, "baqarah": 2, "البقرة": 2, "imran": 3, "آل عمران": 3, "nisa": 4, "النساء": 4, "maida": 5, "المائدة": 5, "anam": 6, "الأنعام": 6, "araf": 7, "الأعراف": 7, "anfal": 8, "الأنفال": 8, "tawba": 9, "التوبة": 9, "yunus": 10, "يونس": 10, "hud": 11, "هود": 11, "yusuf": 12, "يوسف": 12, "rad": 13, "الرعد": 13, "ibrahim": 14, "إبراهيم": 14, "hijr": 15, "الحجر": 15, "nahl": 16, "النحل": 16, "isra": 17, "الإسراء": 17, "kahf": 18, "الكهف": 18, "maryam": 19, "مريم": 19, "taha": 20, "طه": 20, "anbiya": 21, "الأنبياء": 21, "hajj": 22, "الحج": 22, "muminun": 23, "المؤمنون": 23, "nur": 24, "النور": 24, "furqan": 25, "الفرقان": 25, "shuara": 26, "الشعراء": 26, "naml": 27, "النمل": 27, "qasas": 28, "القصص": 28, "ankabut": 29, "العنكبوت": 29, "rum": 30, "الروم": 30, "luqman": 31, "لقمان": 31, "sajda": 32, "السجدة": 32, "ahzab": 33, "الأحزاب": 33, "saba": 34, "سبأ": 34, "fatir": 35, "فاطر": 35, "yasin": 36, "يس": 36, "saffat": 37, "الصافات": 37, "sad": 38, "ص": 38, "zumar": 39, "الزمر": 39, "ghafir": 40, "غافر": 40, "fussilat": 41, "فصلت": 41, "shura": 42, "الشورى": 42, "zukhruf": 43, "الزخرف": 43, "dukhan": 44, "الدخان": 44, "jathiya": 45, "الجاثية": 45, "ahqaf": 46, "الأحقاف": 46, "muhammad": 47, "محمد": 47, "fath": 48, "الفتح": 48, "hujurat": 49, "الحجرات": 49, "qaf": 50, "ق": 50, "dhariyat": 51, "الذاريات": 51, "tur": 52, "الطور": 52, "najm": 53, "النجم": 53, "qamar": 54, "القمر": 54, "rahman": 55, "الرحمن": 55, "waqia": 56, "الواقعة": 56, "hadid": 57, "الحديد": 57, "mujadila": 58, "المجادلة": 58, "hashr": 59, "الحشر": 59, "mumtahana": 60, "الممتحنة": 60, "saff": 61, "الصف": 61, "juma": 62, "الجمعة": 62, "munafiqun": 63, "المنافقون": 63, "taghabun": 64, "التغابن": 64, "talaq": 65, "الطلاق": 65, "tahrim": 66, "التحريم": 66, "mulk": 67, "الملك": 67, "qalam": 68, "القلم": 68, "haqqa": 69, "الحاقة": 69, "maarij": 70, "المعارج": 70, "nuh": 71, "نوح": 71, "jinn": 72, "الجن": 72, "muzzammil": 73, "المزمل": 73, "muddathir": 74, "المدثر": 74, "qiyama": 75, "القيامة": 75, "insan": 76, "الإنسان": 76, "mursalat": 77, "المرسلات": 77, "naba": 78, "النبأ": 78, "naziat": 79, "النازعات": 79, "abasa": 80, "عبس": 80, "takwir": 81, "التكوير": 81, "infitar": 82, "الانفطار": 82, "mutaffifin": 83, "المطفيين": 83, "inshiqaq": 84, "الانشقاق": 84, "buruj": 85, "البروج": 85, "tariq": 86, "الطارق": 86, "ala": 87, "الأعلى": 87, "ghashiya": 88, "الغاشية": 88, "fajr": 89, "الفجر": 89, "balad": 90, "البلد": 90, "shams": 91, "الشمس": 91, "layl": 92, "الليل": 92, "duha": 93, "الضحى": 93, "sharh": 94, "الشرح": 94, "tin": 95, "التين": 95, "alaq": 96, "العلق": 96, "qadr": 97, "القدر": 97, "bayyina": 98, "البينة": 98, "zalzala": 99, "الزلزلة": 99, "adiyat": 100, "العاديات": 100, "qaria": 101, "القارعة": 101, "takathur": 102, "التكاثر": 102, "asr": 103, "العصر": 103, "humaza": 104, "الهمزة": 104, "fil": 105, "الفيل": 105, "quraysh": 106, "قريش": 106, "maun": 107, "الماعون": 107, "kawthar": 108, "الكوثر": 108, "kafirun": 109, "الكافرون": 109, "nasr": 110, "النصر": 110, "masad": 111, "المسد": 111, "ikhlas": 112, "الإخلاص": 112, "falaq": 113, "الفلق": 113, "nas": 114, "الناس": 114
@@ -153,30 +154,38 @@ async function handleMessage(sender_psid, received_message) {
         let imageUrl = null;
         if (received_message.attachments && received_message.attachments[0].type === 'image') {
             imageUrl = received_message.attachments[0].payload.url;
-
-            // --- IMAGE EDITING (.img command in caption) ---
-            if (rawText.startsWith('.img') || rawText.startsWith('.edit')) {
-                let prompt = rawText.replace('.img', '').replace('.edit', '').trim();
-                if (!prompt) prompt = "enhance this image";
-
-                callSendAPI(sender_psid, { text: `🎨 *جاري تعديل الصورة:* ${prompt}...` });
-
-                // Use Pollinations Image-to-Image (via URL param if supported or fallback to simple generation based on prompt + "based on image")
-                // Note: Pollinations supports 'image' param for some models. 
-                // We will try a pattern known to work or a similar free API.
-                // For now, we construct a prompt that implies the user wants an edit.
-
-                // Enhance prompt with AI first
-                prompt = await improveImagePrompt(sender_psid, prompt);
-
-                const finalUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?image=${encodeURIComponent(imageUrl)}&nologo=true&model=flux`;
-
-                return sendAttachmentAPI(sender_psid, 'image', finalUrl, `✅ *Edited Image:* ${prompt}\nBy ${OWNER_NAME}`);
-            }
+            userImageSession[sender_psid] = imageUrl; // Save for session
         }
 
         console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
         sendTypingAction(sender_psid, 'typing_on');
+
+        const command = rawText.split(' ')[0].startsWith('.') ? rawText.split(' ')[0].substring(1) : "";
+        const args = text.split(' ').slice(1);
+
+        // --- IMAGE EDITING (.img) ---
+        // Support: Caption OR Reply/Sequential
+        if (command === 'img' || command === 'edit') {
+            let prompt = args.join(' ');
+            if (!prompt) prompt = "enhance this image";
+
+            // Check current message attachment OR session
+            const targetImage = imageUrl || userImageSession[sender_psid];
+
+            if (!targetImage) {
+                return callSendAPI(sender_psid, { text: "❌ Please send an image first, then type .img [request]" });
+            }
+
+            console.log(chalk.yellow(`[DEBUG] Editing Image: ${prompt}`));
+            callSendAPI(sender_psid, { text: `🎨 *جاري تعديل الصورة:* ${prompt}...` });
+
+            // Enhance prompt
+            prompt = await improveImagePrompt(sender_psid, prompt);
+
+            const finalUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?image=${encodeURIComponent(targetImage)}&nologo=true&model=flux`;
+
+            return sendAttachmentAPI(sender_psid, 'image', finalUrl, `✅ *Edited Image:* ${prompt}\nBy ${OWNER_NAME}`);
+        }
 
         // --- AUTO IMAGE ---
         const imageKeywords = ["ارسم", "صورة", "image", "draw", "picture", "رسم", "انشيء لي", "ولد لي"];
@@ -211,8 +220,7 @@ async function handleMessage(sender_psid, received_message) {
             }
         }
 
-        const command = rawText.split(' ')[0].startsWith('.') ? rawText.split(' ')[0].substring(1) : "";
-        const args = text.split(' ').slice(1);
+
 
         // --- STORY INTERACTION LOGIC ---
         if (userStorySession[sender_psid] && !isNaN(rawText)) {
