@@ -115,9 +115,12 @@ async function getGeminiResponse(senderId, text, imageUrl = null) {
     } catch (e) { return null; }
 }
 
-async function improveImagePrompt(senderId, text) {
+async function improveImagePrompt(senderId, text, isEdit = false) {
     try {
-        const promptRequest = `Translate this text (Arabic/Darija/English) to a detailed executionable English image prompt. Output ONLY the English prompt found. Text: "${text}"`;
+        let promptRequest = `Translate this text (Arabic/Darija/English) to a detailed executionable English image prompt. Output ONLY the English prompt found. Text: "${text}"`;
+        if (isEdit) {
+            promptRequest = `The user wants to EDIT an existing image. Translate this instruction: "${text}" into a prompt that describes the RESULTING image. Keep it concise. Example: 'change bg to red' -> 'subject with red background'. Output ONLY the English prompt.`;
+        }
         const improved = await getHectormanuelAI(senderId, promptRequest, "gpt-4o-mini", "You are a creative translator helper. Output only English.");
         return improved ? improved.replace(/"/g, '') : text;
     } catch (e) { return text; }
@@ -216,9 +219,11 @@ async function handleMessage(sender_psid, received_message) {
             console.log(chalk.yellow(`[DEBUG] Editing Image: ${prompt}`));
             callSendAPI(sender_psid, { text: `🎨 *جاري تعديل الصورة:* ${prompt}...` });
 
-            // Enhance prompt
-            prompt = await improveImagePrompt(sender_psid, prompt);
+            // Enhance prompt (Edit Mode)
+            prompt = await improveImagePrompt(sender_psid, prompt, true);
 
+            // Using 'turbo' model for potential better img2img adherence, or 'flux' with specific prompt.
+            // Adding 'strength' param if supported (Pollinations might support it hiddenly) or relying on prompt.
             const finalUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?image=${encodeURIComponent(targetImage)}&nologo=true&model=flux`;
 
             return sendAttachmentAPI(sender_psid, 'image', finalUrl, `✅ *Edited Image:* ${prompt}\nBy ${OWNER_NAME}`);
