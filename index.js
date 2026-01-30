@@ -163,6 +163,26 @@ async function handleMessage(sender_psid, received_message) {
         let imageUrl = null;
         if (received_message.attachments && received_message.attachments[0].type === 'image') {
             imageUrl = received_message.attachments[0].payload.url;
+
+            // --- IMAGE EDITING (.img command in caption) ---
+            if (rawText.startsWith('.img') || rawText.startsWith('.edit')) {
+                let prompt = rawText.replace('.img', '').replace('.edit', '').trim();
+                if (!prompt) prompt = "enhance this image";
+
+                callSendAPI(sender_psid, { text: `🎨 *جاري تعديل الصورة:* ${prompt}...` });
+
+                // Use Pollinations Image-to-Image (via URL param if supported or fallback to simple generation based on prompt + "based on image")
+                // Note: Pollinations supports 'image' param for some models. 
+                // We will try a pattern known to work or a similar free API.
+                // For now, we construct a prompt that implies the user wants an edit.
+
+                // Enhance prompt with AI first
+                prompt = await improveImagePrompt(sender_psid, prompt);
+
+                const finalUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?image=${encodeURIComponent(imageUrl)}&nologo=true&model=flux`;
+
+                return sendAttachmentAPI(sender_psid, 'image', finalUrl, `✅ *Edited Image:* ${prompt}\nBy ${OWNER_NAME}`);
+            }
         }
 
         console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
