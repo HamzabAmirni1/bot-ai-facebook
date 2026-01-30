@@ -90,9 +90,10 @@ async function getLuminAIResponse(senderId, message) {
     } catch (e) { return null; }
 }
 
-async function getHectormanuelAI(senderId, message, model = "gpt-4o-mini") {
+async function getHectormanuelAI(senderId, message, model = "gpt-4o-mini", customSystemPrompt = null) {
     try {
-        const { data } = await axios.get(`https://all-in-1-ais.officialhectormanuel.workers.dev/?query=${encodeURIComponent(systemPromptText + "\n\nUser: " + message)}&model=${model}`, { timeout: 8000 });
+        const sys = customSystemPrompt !== null ? customSystemPrompt : systemPromptText;
+        const { data } = await axios.get(`https://all-in-1-ais.officialhectormanuel.workers.dev/?query=${encodeURIComponent(sys + "\n\nUser: " + message)}&model=${model}`, { timeout: 8000 });
         return data.success ? data.message?.content : null;
     } catch (e) { return null; }
 }
@@ -109,6 +110,14 @@ async function getGeminiResponse(senderId, text, imageUrl = null) {
         const res = await axios.post(url, { contents }, { timeout: 15000 });
         return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
     } catch (e) { return null; }
+}
+
+async function improveImagePrompt(senderId, text) {
+    try {
+        const promptRequest = `Translate this text (Arabic/Darija/English) to a detailed executionable English image prompt. Output ONLY the English prompt found. Text: "${text}"`;
+        const improved = await getHectormanuelAI(senderId, promptRequest, "gpt-4o-mini", "You are a creative translator helper. Output only English.");
+        return improved ? improved.replace(/"/g, '') : text;
+    } catch (e) { return text; }
 }
 
 // --- WEBHOOK LOGIC ---
@@ -154,10 +163,15 @@ async function handleMessage(sender_psid, received_message) {
         const isImageRequest = imageKeywords.some(k => rawText.includes(k)) && !text.startsWith('.');
 
         if (isImageRequest) {
-            const prompt = text.replace(/ارسم لي|صورة|اريد|انشيء لي|ولد لي|image|draw|picture/gi, '').trim();
+            let prompt = text.replace(/ارسم لي|صورة|اريد|انشيء لي|ولد لي|image|draw|picture/gi, '').trim();
             if (prompt.length > 1) {
                 console.log(chalk.yellow(`[DEBUG] Triggering AI Image for: ${prompt}`));
                 callSendAPI(sender_psid, { text: `🎨 *جاري رسم:* ${prompt}...` });
+
+                // Translate/Enhance prompt
+                prompt = await improveImagePrompt(sender_psid, prompt);
+                console.log(chalk.cyan(`[DEBUG] Enhanced Prompt: ${prompt}`));
+
                 const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true&seed=${Math.floor(Math.random() * 1000000)}`;
                 return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✅ ${prompt}\nBy ${OWNER_NAME}`);
             }
@@ -281,9 +295,14 @@ async function handleMessage(sender_psid, received_message) {
 
         // --- IMAGINE ---
         if (command === 'imagine' || command === 'رسم') {
-            const prompt = args.join(' ');
+            let prompt = args.join(' ');
             if (!prompt) return callSendAPI(sender_psid, { text: "Send a description! Example: .imagine cat" });
             callSendAPI(sender_psid, { text: "🎨 Making your art..." });
+
+            // Translate/Enhance prompt
+            prompt = await improveImagePrompt(sender_psid, prompt);
+            console.log(chalk.cyan(`[DEBUG] Enhanced Prompt: ${prompt}`));
+
             const imgUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?nologo=true&enhance=true&seed=${Math.floor(Math.random() * 1000000)}&type=.jpg`;
             return sendAttachmentAPI(sender_psid, 'image', imgUrl, `✨ *Generated Art:* ${prompt}\nBy ${OWNER_NAME}`);
         }
