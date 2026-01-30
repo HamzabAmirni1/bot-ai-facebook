@@ -40,37 +40,27 @@ const truncate = (str, len) => str.length > len ? str.substring(0, len - 3) + ".
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- SAVETUBE LOGIC ---
-const savetube = {
-    api: { base: "https://media.savetube.me/api", cdn: "/random-cdn", info: "/v2/info", download: "/download" },
-    headers: { 'accept': '*/*', 'content-type': 'application/json', 'origin': 'https://yt.savetube.me', 'referer': 'https://yt.savetube.me/', 'user-agent': 'Postify/1.0.0' },
-    crypto: {
-        hexToBuffer: (hexString) => Buffer.from(hexString.match(/.{1,2}/g).join(''), 'hex'),
-        decrypt: async (enc) => {
-            const secretKey = 'C5D58EF67A7584E4A29F6C35BBC4EB12';
-            const data = Buffer.from(enc, 'base64');
-            const iv = data.slice(0, 16);
-            const content = data.slice(16);
-            const key = savetube.crypto.hexToBuffer(secretKey);
-            const decipher = crypto.createDecipheriv('aes-128-cbc', key, iv);
-            let decrypted = decipher.update(content);
-            decrypted = Buffer.concat([decrypted, decipher.final()]);
-            return JSON.parse(decrypted.toString());
-        }
-    },
+// --- UNIVERSAL DOWNLOADER (COBALT) ---
+const downloader = {
     download: async (link, format) => {
+        const isAudio = format === 'mp3';
+        const headers = { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' };
+
+        // Strategy 1: Cobalt API (High Quality)
         try {
-            const idMatch = link.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([a-zA-Z0-9_-]{11})/);
-            const id = idMatch ? idMatch[1] : null;
-            if (!id) throw new Error("Invalid URL");
-            const cdnRes = await axios.get(`${savetube.api.base}${savetube.api.cdn}`, { headers: savetube.headers });
-            const cdn = cdnRes.data.cdn;
-            const infoRes = await axios.post(`https://${cdn}${savetube.api.info}`, { url: `https://www.youtube.com/watch?v=${id}` }, { headers: savetube.headers });
-            const decrypted = await savetube.crypto.decrypt(infoRes.data.data);
-            const dl = await axios.post(`https://${cdn}${savetube.api.download}`, {
-                id: id, downloadType: format === 'mp3' ? 'audio' : 'video', quality: format === 'mp3' ? '128' : format, key: decrypted.key
-            }, { headers: savetube.headers });
-            return { status: true, result: { title: decrypted.title, download: dl.data.data.downloadUrl } };
-        } catch (e) { return { status: false, error: e.message }; }
+            const payload = {
+                url: link,
+                vQuality: isAudio ? undefined : format,
+                isAudioOnly: isAudio,
+                aFormat: isAudio ? 'mp3' : undefined
+            };
+            const { data } = await axios.post('https://api.cobalt.tools/api/json', payload, { headers });
+
+            if (data.url) return { status: true, result: { title: "Media Content", download: data.url } };
+            if (data.picker && data.picker.length > 0) return { status: true, result: { title: "Media Content", download: data.picker[0].url } };
+        } catch (e) { console.error("Cobalt Error:", e.message); }
+
+        return { status: false, error: "Download failed" };
     }
 };
 
@@ -212,7 +202,8 @@ async function handleMessage(sender_psid, received_message) {
         if (ytPattern.test(text.trim()) && !text.startsWith('.')) {
             console.log(chalk.yellow(`[DEBUG] YT Link Auto-Detected`));
             callSendAPI(sender_psid, { text: "🔗 YouTube Link detected! Please wait..." });
-            const res = await savetube.download(text.trim(), '720');
+            callSendAPI(sender_psid, { text: "🔗 YouTube Link detected! Please wait..." });
+            const res = await downloader.download(text.trim(), '720');
             if (res.status) {
                 return sendAttachmentAPI(sender_psid, 'video', res.result.download, `✅ *${res.result.title}*\nBy ${OWNER_NAME}`);
             } else {
@@ -297,7 +288,7 @@ async function handleMessage(sender_psid, received_message) {
                 const video = results.videos[0];
                 if (!video) return callSendAPI(sender_psid, { text: "❌ لم يتم العثور على الصوت." });
                 callSendAPI(sender_psid, { text: `⏳ جاري تحميل: ${video.title}...` });
-                const res = await savetube.download(video.url, 'mp3');
+                const res = await downloader.download(video.url, 'mp3');
                 if (res.status) {
                     return sendAttachmentAPI(sender_psid, 'audio', res.result.download, `✅ ${video.title}\nBy ${OWNER_NAME}`);
                 }
@@ -315,7 +306,7 @@ async function handleMessage(sender_psid, received_message) {
                 const video = results.videos[0];
                 if (!video) return callSendAPI(sender_psid, { text: "❌ لم يتم العثور على نتائج." });
                 callSendAPI(sender_psid, { text: `⏳ جاري معالجة: *${video.title}*...` });
-                const res = await savetube.download(video.url, 'mp3');
+                const res = await downloader.download(video.url, 'mp3');
                 if (res.status) {
                     return sendAttachmentAPI(sender_psid, 'audio', res.result.download, `✅ *${video.title}*\nBy ${OWNER_NAME}`);
                 }
@@ -368,7 +359,7 @@ async function handleMessage(sender_psid, received_message) {
             if (!url) return callSendAPI(sender_psid, { text: `Usage: .${command} [YouTube Link]` });
             const format = command === 'ytmp3' ? 'mp3' : '720';
             callSendAPI(sender_psid, { text: `⏳ Analyzing Link... Please wait.` });
-            const res = await savetube.download(url, format);
+            const res = await downloader.download(url, format);
             if (res.status) {
                 return sendAttachmentAPI(sender_psid, command === 'ytmp3' ? 'audio' : 'video', res.result.download, `✅ *${res.result.title}*\nBy ${OWNER_NAME}`);
             }
