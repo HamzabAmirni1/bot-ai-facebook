@@ -110,23 +110,20 @@ async function getQuranSurahText(surahInput) {
 async function getObitoGemini(question, imageUrl) {
     try {
         if (!imageUrl) return null;
-
         let finalImageUrl = imageUrl;
         if (imageUrl.includes('fbcdn.net') || imageUrl.includes('messenger.com')) {
             const uploaded = await uploadToCatbox(imageUrl);
             if (uploaded) finalImageUrl = uploaded;
         }
-
         const encodedQuestion = encodeURIComponent(question || "Analyze this image.");
-        // Try both 2.5 and 1.5 endpoints as they are common and one might be down
         const endpoints = [
-            `https://obito-mr-apis.vercel.app/api/ai/gemini-pro?txt=${encodedQuestion}&img=${encodeURIComponent(finalImageUrl)}`,
-            `https://obito-mr-apis.vercel.app/api/ai/gemini_2.5_flash?txt=${encodedQuestion}&img=${encodeURIComponent(finalImageUrl)}`
+            `https://obito-mr-apis.vercel.app/api/ai/gemini-vision?txt=${encodedQuestion}&img=${encodeURIComponent(finalImageUrl)}`,
+            `https://obito-mr-apis.vercel.app/api/ai/gemini_2.5_flash?txt=${encodedQuestion}&img=${encodeURIComponent(finalImageUrl)}`,
+            `https://obito-mr-apis.vercel.app/api/ai/gemini-pro?txt=${encodedQuestion}&img=${encodeURIComponent(finalImageUrl)}`
         ];
-
         for (const url of endpoints) {
             try {
-                const { data } = await axios.get(url, { timeout: 20000 });
+                const { data } = await axios.get(url, { timeout: 15000 });
                 if (data.success && data.result) return data.result;
             } catch (e) { }
         }
@@ -137,9 +134,22 @@ async function getObitoGemini(question, imageUrl) {
 async function getRyzendesuVision(question, imageUrl) {
     try {
         if (!imageUrl) return null;
-        const encodedQuestion = encodeURIComponent(question || "Analyze this image.");
-        const { data } = await axios.get(`https://api.ryzendesu.vip/api/ai/gemini-vision?url=${encodeURIComponent(imageUrl)}&text=${encodedQuestion}`, { timeout: 30000 });
+        const { data } = await axios.get(`https://api.ryzendesu.vip/api/ai/gemini-vision?url=${encodeURIComponent(imageUrl)}&text=${encodeURIComponent(question || "Analyze this")}`, { timeout: 20000 });
         return data.result || null;
+    } catch (e) { return null; }
+}
+
+async function getMaherVision(question, imageUrl) {
+    try {
+        const { data } = await axios.get(`https://api.maher-zubair.tech/ai/gemini-vision?q=${encodeURIComponent(question || "Describe")}&url=${encodeURIComponent(imageUrl)}`, { timeout: 20000 });
+        return data.result || null;
+    } catch (e) { return null; }
+}
+
+async function getBK9Vision(question, imageUrl) {
+    try {
+        const { data } = await axios.get(`https://api.bk9.site/ai/geminiimg?url=${encodeURIComponent(imageUrl)}&q=${encodeURIComponent(question || "Analyze")}`, { timeout: 20000 });
+        return data.BK9 || data.result || null;
     } catch (e) { return null; }
 }
 
@@ -767,16 +777,28 @@ async function handleMessage(sender_psid, received_message) {
             }
             console.log(chalk.cyan(`[DEBUG] Proactive Vision triggered.`));
 
-            // Priority 1: Obito Gemini
+            // Priority 1: Obito Gemini (Multiple Endpoints)
             aiReply = await getObitoGemini(visionPrompt, visionContext);
 
-            // Priority 2: Ryzendesu Gemini Vision (Strong Fallback)
+            // Priority 2: Ryzendesu Gemini Vision
             if (!aiReply) {
-                console.log(chalk.yellow(`[DEBUG] Obito Vision failed. Trying Ryzendesu...`));
+                console.log(chalk.yellow(`[DEBUG] Obito failed. Trying Ryzendesu...`));
                 aiReply = await getRyzendesuVision(visionPrompt, visionContext);
             }
 
-            // Priority 3: Official Gemini 1.5 Flash (If key exists)
+            // Priority 3: Maher Gemini Vision
+            if (!aiReply) {
+                console.log(chalk.yellow(`[DEBUG] Ryzendesu failed. Trying Maher...`));
+                aiReply = await getMaherVision(visionPrompt, visionContext);
+            }
+
+            // Priority 4: BK9 Gemini Vision
+            if (!aiReply) {
+                console.log(chalk.yellow(`[DEBUG] Maher failed. Trying BK9...`));
+                aiReply = await getBK9Vision(visionPrompt, visionContext);
+            }
+
+            // Priority 5: Official Gemini 1.5 Flash (If key exists)
             if (!aiReply && config.geminiApiKey) {
                 aiReply = await getGeminiResponse(sender_psid, visionPrompt, visionContext);
             }
