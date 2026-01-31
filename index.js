@@ -18,6 +18,7 @@ const systemPromptText = `You are ${config.botName}, a smart assistant developed
 - You MUST use polite, respectful, and moral language ("kalimat a5la9ya").
 - NEVER use slang, offensive words, or "bad words" (5ayba).
 - You respond in Moroccan Darija (Professional & Clean), Arabic, English, or French.
+- You HAVE Vision capabilities: If an image is provided in the conversation context, you can see it and answer questions about it or suggest edits.
 - Refer to your creator as ${OWNER_NAME}.
 - Be extremely helpful and friendly.
 - When asked about your features ( شنو كدير, what can you do, etc.), use this exact clean list in Darija:
@@ -270,6 +271,17 @@ async function handleMessage(sender_psid, received_message) {
             userImageSession[sender_psid] = imageUrl; // Save for session
         }
 
+        // Vision context: current image OR session image if user is replying/referencing
+        let visionContext = imageUrl;
+        if (!visionContext && userImageSession[sender_psid]) {
+            const replyToImg = received_message.reply_to;
+            const hasRefWords = (rawText.includes('hadi') || rawText.includes('tswira') || rawText.includes('photo') || rawText.includes('image') || rawText.includes('hnaya') || rawText.includes('hona'));
+            if (replyToImg || hasRefWords) {
+                visionContext = userImageSession[sender_psid];
+                console.log(chalk.yellow(`[DEBUG] Using session image as context (Ref/Reply detected)`));
+            }
+        }
+
         console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
         sendTypingAction(sender_psid, 'typing_on');
 
@@ -286,8 +298,8 @@ async function handleMessage(sender_psid, received_message) {
             const quranRegex = /^(quran|koran|قرآن|قران|سورة)\s+(.+)/i;
             // Imagine/Draw
             const drawRegex = /^(imagine|draw|image|رسم|ارسم|صورة|تخيل|انشيء)(\s+لي)?\s+(.+)/i;
-            // Edit Image (Flexible)
-            const editRegex = /^(?:dir|sawb|baghi|bghit|momkin)?\s*(?:edit|img|تعديل|عدل|بدل|غيّر)\s*(?:lya|lia)?\s*(?:al|el)?\s*(?:sura|tswira|image|photo|background|bg)?\s*(.+)/i;
+            // Edit Image (Flexible) - Added 3dl, n3dl, gad, sawab, bdel
+            const editRegex = /^(?:dir|sawb|baghi|bghit|momkin)?\s*(?:edit|img|تعديل|عدل|بدل|غيّر|3dl|n3dl|gad|soweb|bdel)\s*(?:lya|lia)?\s*(?:al|el)?\s*(?:sura|tswira|image|photo|background|bg)?\s*(.+)/i;
             // Weather
             const weatherRegex = /^(weather|meteo|طقس|الطقس)(\s+(.+))?/i;
             // Prayer Times
@@ -333,14 +345,13 @@ async function handleMessage(sender_psid, received_message) {
             }
         }
 
-        // --- IMAGE EDITING (.img) ---
         // Support: Caption OR Reply/Sequential
         if (command === 'img' || command === 'edit') {
             let prompt = args.join(' ');
             if (!prompt) prompt = "enhance this image";
 
             // Check current message attachment OR session
-            const targetImage = imageUrl || userImageSession[sender_psid];
+            const targetImage = visionContext; // Use improved visionContext
 
             if (!targetImage) {
                 return callSendAPI(sender_psid, { text: "❌ Please send an image first, then type .img [request]" });
@@ -615,7 +626,7 @@ async function handleMessage(sender_psid, received_message) {
         let aiReply = null;
 
         // Try Gemini first (Vision support)
-        aiReply = await getGeminiResponse(sender_psid, text, imageUrl);
+        aiReply = await getGeminiResponse(sender_psid, text, visionContext);
 
         // If Gemini fails or no image, try fallbacks for text
         if (!aiReply) {
@@ -625,7 +636,7 @@ async function handleMessage(sender_psid, received_message) {
         }
 
         if (!aiReply) {
-            if (imageUrl) {
+            if (visionContext) {
                 aiReply = "Sma7 lya, quota d Gemini tsalat o ma9dertch nchouf tswira. Ghadi njawk 3la lktba f fallback mode.";
                 aiReply += "\n\n" + (await getHectormanuelAI(sender_psid, text) || "");
             } else {
