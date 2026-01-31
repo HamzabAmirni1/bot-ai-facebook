@@ -176,7 +176,9 @@ async function getGeminiResponse(senderId, text, imageUrl = null) {
             });
         });
 
-        const userPart = { text: text || "Describe this image" };
+        const userPart = {
+            text: text || "Analyze this image. If there is a question, a math problem, or any task written in this image, please solve it or answer it directly in detail. Otherwise, just describe what you see."
+        };
         const currentParts = [userPart];
 
         if (imageUrl) {
@@ -207,7 +209,7 @@ async function describeImage(imageUrl) {
         const imageRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
         const contents = [{
             parts: [
-                { text: "Describe this image in detail. Focus on the main subject, setting, and colors. Be concise." },
+                { text: "Analyze this image in detail. If it contains text, questions, or problems (math, logic, etc.), solve them or extract the information. If it's just a photo, describe the subject and setting. Be professional and helpful." },
                 { inline_data: { mime_type: "image/jpeg", data: Buffer.from(imageRes.data).toString("base64") } }
             ]
         }];
@@ -655,9 +657,11 @@ async function handleMessage(sender_psid, received_message) {
         // If Gemini fails or no image, try fallbacks for text (with cached vision context if available)
         if (!aiReply) {
             let contextPrompt = text;
-            if (cachedDesc && (visionContext || rawText.includes('sura') || rawText.includes('image') || rawText.includes('photo') || rawText.includes('tsira') || rawText.includes('hadi'))) {
-                contextPrompt = `(Context: The user is looking at a photo you previously described as: "${cachedDesc}").\n\nUser Question: ${text}`;
-                console.log(chalk.cyan(`[DEBUG] Enriched fallback prompt with cached vision description.`));
+            if (cachedDesc && (visionContext || rawText.includes('sura') || rawText.includes('image') || rawText.includes('photo') || rawText.includes('tsira') || rawText.includes('hadi') || rawText.includes('fiha'))) {
+                const imgAnalysis = `[System Vision Cache]: The user is currently showing you an image. Description: "${cachedDesc}".`;
+                const userQuery = text ? `The user is specifically asking: "${text}" about this image.` : "The user sent this image without text. Explain what is in it or solve any problems visible based on the description.";
+                contextPrompt = `${imgAnalysis}\n\nTask: Using the description above, answer the user's question or provide help as if you can see the image yourself.\n${userQuery}`;
+                console.log(chalk.cyan(`[DEBUG] Enriched fallback prompt with detailed vision cache.`));
             }
             aiReply = await getHectormanuelAI(sender_psid, contextPrompt) ||
                 await getLuminAIResponse(sender_psid, contextPrompt) ||
