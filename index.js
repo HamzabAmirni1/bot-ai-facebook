@@ -111,15 +111,43 @@ async function getGeminiResponse(senderId, text, imageUrl = null) {
             contents[0].parts.push({ inline_data: { mime_type: "image/jpeg", data: Buffer.from(imageRes.data).toString("base64") } });
         }
         const res = await axios.post(url, { contents }, { timeout: 15000 });
+    } catch (e) { return null; }
+}
+
+async function describeImage(imageUrl) {
+    if (!config.geminiApiKey) return null;
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${config.geminiApiKey}`;
+        const imageRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+        const contents = [{
+            parts: [
+                { text: "Describe this image in detail. Focus on the main subject, setting, and colors. Be concise." },
+                { inline_data: { mime_type: "image/jpeg", data: Buffer.from(imageRes.data).toString("base64") } }
+            ]
+        }];
+        const res = await axios.post(url, { contents }, { timeout: 15000 });
         return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
     } catch (e) { return null; }
 }
 
-async function improveImagePrompt(senderId, text, isEdit = false) {
+async function improveImagePrompt(senderId, text, isEdit = false, imageContext = null) {
     try {
         let promptRequest = `Translate this text (Arabic/Darija/English) to a detailed executionable English image prompt. Output ONLY the English prompt found. Text: "${text}"`;
         if (isEdit) {
-            promptRequest = `The user wants to EDIT an existing image. Translate this instruction: "${text}" into a prompt that describes the RESULTING image. Keep it concise. Example: 'change bg to red' -> 'subject with red background'. Output ONLY the English prompt.`;
+            if (imageContext) {
+                promptRequest = `The user wants to EDIT an existing image.
+                 Original Image Description: "${imageContext}"
+                 User Instruction: "${text}"
+                 
+                 Task: Create a NEW full image prompt that applies the User Instruction to the Original Image. 
+                 Example: Desc="Cat on bed", User="make it red" -> "Red cat on bed, highly detailed".
+                 Output ONLY the English prompt.`;
+            } else {
+                promptRequest = `The user wants to EDIT an existing image but we don't know what it is. 
+                User Instruction: "${text}"
+                Task: Create a prompt that describes the RESULTING image. If the subject is unknown, guess based on context or keep it generic.
+                Output ONLY the English prompt.`;
+            }
         }
         const improved = await getHectormanuelAI(senderId, promptRequest, "gpt-4o-mini", "You are a creative translator helper. Output only English.");
         return improved ? improved.replace(/"/g, '') : text;
@@ -219,8 +247,17 @@ async function handleMessage(sender_psid, received_message) {
             console.log(chalk.yellow(`[DEBUG] Editing Image: ${prompt}`));
             callSendAPI(sender_psid, { text: `🎨 *جاري تعديل الصورة:* ${prompt}...` });
 
-            // Enhance prompt (Edit Mode)
-            prompt = await improveImagePrompt(sender_psid, prompt, true);
+            // 1. Analyze Image (if possible)
+            let imageDesc = null;
+            try {
+                if (config.geminiApiKey) {
+                    imageDesc = await describeImage(targetImage);
+                    if (imageDesc) console.log(chalk.cyan(`[DEBUG] Image Desc: ${imageDesc.substring(0, 50)}...`));
+                }
+            } catch (e) { }
+
+            // 2. Enhance prompt with Context
+            prompt = await improveImagePrompt(sender_psid, prompt, true, imageDesc);
 
             // Using 'turbo' model for potential better img2img adherence, or 'flux' with specific prompt.
             // Adding 'strength' param if supported (Pollinations might support it hiddenly) or relying on prompt.
