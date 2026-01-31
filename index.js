@@ -121,7 +121,7 @@ async function getCustomOpenAI(senderId, message) {
         // If deployed to Cloud, you must replace this with the PUBLIC URL.
 
         const payload = {
-            model: "gemini-1.5-flash",
+            model: "gemini-3-flash",
             messages: [
                 { role: "system", content: systemPromptText },
                 { role: "user", content: message }
@@ -143,7 +143,7 @@ async function getCustomOpenAI(senderId, message) {
 async function getGeminiResponse(senderId, text, imageUrl = null) {
     if (!config.geminiApiKey) return null;
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${config.geminiApiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${config.geminiApiKey}`;
 
         const userPart = { text: systemPromptText + "\n\nUser: " + (text || "Describe this image") };
         const parts = [userPart];
@@ -166,7 +166,7 @@ async function getGeminiResponse(senderId, text, imageUrl = null) {
 async function describeImage(imageUrl) {
     if (!config.geminiApiKey) return null;
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${config.geminiApiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${config.geminiApiKey}`;
         const imageRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
         const contents = [{
             parts: [
