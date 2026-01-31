@@ -14,13 +14,15 @@ const app = express().use(bodyParser.json());
 const OWNER_NAME = "Hamza Amirni";
 config.ownerName = OWNER_NAME;
 
-const systemPromptText = `You are ${config.botName}, a smart assistant developed by the legendary ${OWNER_NAME}.
+const systemPromptText = `You are ${config.botName}, an advanced AI assistant powered by state-of-the-art technology, developed by the legendary ${OWNER_NAME}.
+- Your intelligence and behavior are modeled after ChatGPT (Web/APK version).
+- You provide detailed, structured, and insightful answers. Use bolding, lists, and clear paragraphs.
 - You MUST use polite, respectful, and moral language ("kalimat a5la9ya").
 - NEVER use slang, offensive words, or "bad words" (5ayba).
 - You respond in Moroccan Darija (Professional & Clean), Arabic, English, or French.
-- You HAVE Vision capabilities: If an image is provided in the conversation context, you can see it and answer questions about it or suggest edits.
+- You HAVE advanced Vision capabilities: If an image is provided or referenced, you can see it and analyze it deeply.
 - Refer to your creator as ${OWNER_NAME}.
-- Be extremely helpful and friendly.
+- Be extremely helpful, friendly, and smart.
 - When asked about your features ( شنو كدير, what can you do, etc.), use this exact clean list in Darija:
   1. *.play [song]*: T7mil l-mousiqa (تحميل الأغاني).
   2. *.imagine [text]*: Rasam sowar b ذكاء اصطناعي (رسم الصور).
@@ -33,8 +35,9 @@ const systemPromptText = `You are ${config.botName}, a smart assistant developed
   9. *.salat [city]*: Awqat l-salat.
   10. *.img [edit]*: Ta3dil l-sowar.
   11. *.joke* / *.quote*: Nokat o 7ikam.
-  12. Ka t-detecta automatico rawabit YouTube.
-  13. Ka t-detecta klmat "draw/رسم" bach t-ncha' sowar.`;
+  12. *.clear*: Start a new fresh conversation (mسح الذاكرة).
+  13. Ka t-detecta automatico rawabit YouTube.
+  14. Ka t-detecta klmat "draw/رسم" bach t-ncha' sowar.`;
 
 // Temporary Session Memory for Stories, Images & Context
 const userStorySession = {};
@@ -617,6 +620,12 @@ async function handleMessage(sender_psid, received_message) {
             return callSendAPI(sender_psid, { text: "Sma7 lya, error." });
         }
 
+        // --- CLEAR CHAT ---
+        if (command === 'clear' || command === 'fresh' || command === 'مسح') {
+            userChatHistory[sender_psid] = [];
+            return callSendAPI(sender_psid, { text: "🧹 *Memory cleared!* Starting a new fresh conversation just like ChatGPT.\n\nBach nsa3dk hnaya?" });
+        }
+
         // --- OWNER ---
         if (command === 'owner' || command === 'مطور') {
             return callSendAPI(sender_psid, { text: `👤 *Developer:* ${OWNER_NAME}\n📸 Instagram: ${config.social.instagram}\n💬 WhatsApp: ${config.social.whatsapp}` });
@@ -669,6 +678,23 @@ function callSendAPI(sender_psid, response) {
         .catch(err => console.error(chalk.red('Error: ' + (err.response?.data?.error?.message || err.message))));
 }
 
+function setPersistentMenu() {
+    const url = `https://graph.facebook.com/v19.0/me/messenger_profile?access_token=${config.PAGE_ACCESS_TOKEN}`;
+    const payload = {
+        persistent_menu: [{
+            locale: "default",
+            composer_input_disabled: false,
+            call_to_actions: [
+                { type: "postback", title: "🌟 Menu/الأوامر", payload: "menu" },
+                { type: "postback", title: "🧹 Clear Memory", payload: ".clear" },
+                { type: "postback", title: "👑 Developer", payload: "owner" }
+            ]
+        }],
+        get_started: { payload: "menu" }
+    };
+    axios.post(url, payload).then(() => console.log(chalk.green("[DEBUG] Persistent Menu Updated"))).catch(e => console.error(chalk.red("[ERROR] Persistent Menu Failed:"), e.message));
+}
+
 async function sendAttachmentAPI(sender_psid, type, url, caption) {
     console.log(chalk.yellow(`[DEBUG] Attempting to send ${type}: ${url}`));
     try {
@@ -713,4 +739,7 @@ setInterval(() => {
     }
 }, 5 * 60 * 1000); // Pulse every 5 minutes
 
-app.listen(process.env.PORT || 8080, () => console.log(chalk.cyan(`Bot starting...`)));
+app.listen(process.env.PORT || 8080, () => {
+    console.log(chalk.cyan(`Bot starting...`));
+    setPersistentMenu(); // Update menu on boot
+});
