@@ -349,10 +349,10 @@ async function handleMessage(sender_psid, received_message) {
             try {
                 const { data } = await axios.get(`https://wttr.in/${encodeURIComponent(city)}?format=j1`);
                 const current = data.current_condition[0];
-                const weather = `🌤️ *الطقس في ${city}*\\n\\n` +
-                    `🌡️ الحرارة: ${current.temp_C}°C\\n` +
-                    `💨 الرياح: ${current.windspeedKmph} km/h\\n` +
-                    `💧 الرطوبة: ${current.humidity}%\\n` +
+                const weather = `🌤️ *الطقس في ${city}*\n\n` +
+                    `🌡️ الحرارة: ${current.temp_C}°C\n` +
+                    `💨 الرياح: ${current.windspeedKmph} km/h\n` +
+                    `💧 الرطوبة: ${current.humidity}%\n` +
                     `☁️ الوصف: ${current.weatherDesc[0].value}`;
                 return callSendAPI(sender_psid, { text: weather });
             } catch (e) {
@@ -366,11 +366,11 @@ async function handleMessage(sender_psid, received_message) {
             try {
                 const { data } = await axios.get(`https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=Morocco&method=3`);
                 const timings = data.data.timings;
-                const prayerTimes = `🕌 *أوقات الصلاة - ${city}*\\n\\n` +
-                    `🌅 الفجر: ${timings.Fajr}\\n` +
-                    `☀️ الظهر: ${timings.Dhuhr}\\n` +
-                    `🌤️ العصر: ${timings.Asr}\\n` +
-                    `🌆 المغرب: ${timings.Maghrib}\\n` +
+                const prayerTimes = `🕌 *أوقات الصلاة - ${city}*\n\n` +
+                    `🌅 الفجر: ${timings.Fajr}\n` +
+                    `☀️ الظهر: ${timings.Dhuhr}\n` +
+                    `🌤️ العصر: ${timings.Asr}\n` +
+                    `🌆 المغرب: ${timings.Maghrib}\n` +
                     `🌙 العشاء: ${timings.Isha}`;
                 return callSendAPI(sender_psid, { text: prayerTimes });
             } catch (e) {
