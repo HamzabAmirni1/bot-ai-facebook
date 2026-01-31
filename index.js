@@ -206,8 +206,8 @@ async function handleMessage(sender_psid, received_message) {
             const quranRegex = /^(quran|koran|قرآن|قران|سورة)\s+(.+)/i;
             // Imagine/Draw
             const drawRegex = /^(imagine|draw|image|رسم|ارسم|صورة|تخيل|انشيء)(\s+لي)?\s+(.+)/i;
-            // Edit Image
-            const editRegex = /^(edit|img|تعديل|عدل|بدل|غيّر)(\s+ال)?(\s+صورة|image|foto)?\s+(.+)/i;
+            // Edit Image (Flexible)
+            const editRegex = /^(?:dir|sawb|baghi|bghit|momkin)?\s*(?:edit|img|تعديل|عدل|بدل|غيّر)\s*(?:lya|lia)?\s*(?:al|el)?\s*(?:sura|tswira|image|photo|background|bg)?\s*(.+)/i;
             // Stories
             const storyRegex = /^(story|riwaya|hikaya|قصة|رواية|حكاية)/i;
 
@@ -220,9 +220,19 @@ async function handleMessage(sender_psid, received_message) {
             } else if (drawRegex.test(rawText)) {
                 command = 'imagine';
                 args = rawText.match(drawRegex)[3].split(' ');
-            } else if (editRegex.test(rawText) && (imageUrl || userImageSession[sender_psid])) {
-                command = 'img';
-                args = rawText.match(editRegex)[4].split(' ');
+            } else if (editRegex.test(rawText)) {
+                // Check if we have an image in session OR attachment
+                if (imageUrl || userImageSession[sender_psid]) {
+                    command = 'img';
+                    // The regex group matching the prompt is likely at the end.
+                    // Match result: [full, prefix?, command, ..., prompt]
+                    // Let's use a simpler specific cleaner closer to the command handler.
+                    // For now, extract the last group which is (.+)
+                    const matches = rawText.match(editRegex);
+                    // The last group is the prompt. Length varies based on optional groups.
+                    // Let's just grab the last element.
+                    args = (matches[matches.length - 1] || "").split(' ');
+                }
             } else if (storyRegex.test(rawText)) {
                 command = 'riwaya';
             } else if (videoRegex.test(rawText)) {
@@ -486,6 +496,11 @@ function callSendAPI(sender_psid, response) {
 async function sendAttachmentAPI(sender_psid, type, url, caption) {
     console.log(chalk.yellow(`[DEBUG] Attempting to send ${type}: ${url}`));
     try {
+        // Track SENT images so user can reply to them for editing
+        if (type === 'image') {
+            userImageSession[sender_psid] = url;
+        }
+
         const attachmentType = type === 'audio' ? 'audio' : (type === 'video' ? 'video' : 'image');
         const res = await axios.post(`https://graph.facebook.com/v19.0/me/messages?access_token=${config.PAGE_ACCESS_TOKEN}`, {
             recipient: { id: sender_psid },
