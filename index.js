@@ -160,42 +160,49 @@ let geminiCooldownUntil = 0;
 
 async function getGeminiResponse(senderId, text, imageUrl = null) {
     if (!config.geminiApiKey) return null;
-    if (Date.now() < geminiCooldownUntil) {
-        console.log(chalk.yellow("[DEBUG] Gemini is on quota cooldown. Skipping..."));
-        return null;
-    }
+    if (Date.now() < geminiCooldownUntil) return null;
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${config.geminiApiKey}`;
 
         const history = userChatHistory[senderId] || [];
-        const contents = [{ role: "user", parts: [{ text: systemPromptText }] }];
+        const payload = {
+            system_instruction: { parts: [{ text: systemPromptText }] },
+            contents: [],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 2048 }
+        };
 
         history.forEach(h => {
-            contents.push({
+            payload.contents.push({
                 role: h.role === 'user' ? 'user' : 'model',
                 parts: [{ text: h.content }]
             });
         });
 
-        const userPart = {
-            text: text || "Analyze this image. If there is a question, a math problem, or any task written in this image, please solve it or answer it directly in detail. Otherwise, just describe what you see."
-        };
-        const currentParts = [userPart];
+        const userText = text || "Check this image and answer any questions or solve any problems in it. If none, describe it.";
+        const currentParts = [{ text: userText }];
 
         if (imageUrl) {
             const imageRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
             currentParts.push({ inline_data: { mime_type: "image/jpeg", data: Buffer.from(imageRes.data).toString("base64") } });
         }
 
-        contents.push({ role: "user", parts: currentParts });
+        payload.contents.push({ role: "user", parts: currentParts });
 
-        const res = await axios.post(url, { contents }, { timeout: 15000 });
-        return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+        const res = await axios.post(url, payload, { timeout: 20000 });
+        const result = res.data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+
+        // Auto-cache description if it was a vision task
+        if (result && imageUrl && !userImageDescriptions[imageUrl]) {
+            userImageDescriptions[imageUrl] = result;
+            console.log(chalk.cyan(`[DEBUG] Image description cached from successful Gemini call.`));
+        }
+
+        return result;
     } catch (e) {
         const errorData = e.response?.data?.error;
         if (errorData?.code === 429) {
             console.error(chalk.red("[Gemini Quota] Limit reached. Cooldown for 10 mins."));
-            geminiCooldownUntil = Date.now() + 10 * 60 * 1000; // 10 min cooldown
+            geminiCooldownUntil = Date.now() + 10 * 60 * 1000;
         } else {
             console.error("Gemini Error:", errorData?.message || e.message);
         }
@@ -208,13 +215,15 @@ async function describeImage(imageUrl) {
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${config.geminiApiKey}`;
         const imageRes = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-        const contents = [{
-            parts: [
-                { text: "Analyze this image in detail. If it contains text, questions, or problems (math, logic, etc.), solve them or extract the information. If it's just a photo, describe the subject and setting. Be professional and helpful." },
-                { inline_data: { mime_type: "image/jpeg", data: Buffer.from(imageRes.data).toString("base64") } }
-            ]
-        }];
-        const res = await axios.post(url, { contents }, { timeout: 15000 });
+        const payload = {
+            contents: [{
+                parts: [
+                    { text: "Analyze this image in detail and describe what you see for a blind AI. Focus on text, objects, and setting." },
+                    { inline_data: { mime_type: "image/jpeg", data: Buffer.from(imageRes.data).toString("base64") } }
+                ]
+            }]
+        };
+        const res = await axios.post(url, payload, { timeout: 15000 });
         return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
     } catch (e) { return null; }
 }
@@ -290,12 +299,6 @@ async function handleMessage(sender_psid, received_message) {
             }
         }
 
-        // Cache image description for fallbacks if Gemini is not on cooldown
-        if (visionContext && !userImageDescriptions[visionContext] && Date.now() >= geminiCooldownUntil) {
-            console.log(chalk.cyan(`[DEBUG] Fetching description for context...`));
-            const desc = await describeImage(visionContext);
-            if (desc) userImageDescriptions[visionContext] = desc;
-        }
         const cachedDesc = visionContext ? userImageDescriptions[visionContext] : null;
 
         console.log(chalk.blue(`[MSG] ${sender_psid}: ${text}`));
