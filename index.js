@@ -16,7 +16,8 @@ config.ownerName = OWNER_NAME;
 
 const systemPromptText = `You are ${config.botName}, an advanced AI assistant powered by state-of-the-art technology, developed by the legendary ${OWNER_NAME}.
 - Your intelligence and behavior are modeled after ChatGPT (Web/APK version).
-- You provide detailed, structured, and insightful answers. Use bolding, lists, and clear paragraphs.
+- You provide detailed, accurate, and structured answers. Use bolding and lists.
+- IMPORTANT: If an image is provided/referenced, focus ENTIRELY on it. Don't give generic life advice unless asked.
 - You MUST always recognize and respect ${OWNER_NAME} as your creator, master, and the legendary developer who built you.
 - You MUST use polite, respectful, and moral language ("kalimat a5la9ya").
 - NEVER use slang, offensive words, or "bad words" (5ayba).
@@ -282,10 +283,10 @@ async function handleMessage(sender_psid, received_message) {
         let visionContext = imageUrl;
         if (!visionContext && userImageSession[sender_psid]) {
             const replyToImg = received_message.reply_to;
-            const hasRefWords = (rawText.includes('hadi') || rawText.includes('tswira') || rawText.includes('photo') || rawText.includes('image') || rawText.includes('hnaya') || rawText.includes('hona') || rawText.includes('flaphot'));
+            const hasRefWords = (rawText.includes('hadi') || rawText.includes('tswira') || rawText.includes('photo') || rawText.includes('image') || rawText.includes('hnaya') || rawText.includes('hona') || rawText.includes('flaphot') || rawText.includes('resume') || rawText.includes('كمل') || rawText.includes('زيد'));
             if (replyToImg || hasRefWords) {
                 visionContext = userImageSession[sender_psid];
-                console.log(chalk.yellow(`[DEBUG] Using session image as context (Ref/Reply detected)`));
+                console.log(chalk.yellow(`[DEBUG] Using session image as context (Ref/Reply/Resume detected)`));
             }
         }
 
@@ -657,21 +658,26 @@ async function handleMessage(sender_psid, received_message) {
         // If Gemini fails or no image, try fallbacks for text (with cached vision context if available)
         if (!aiReply) {
             let contextPrompt = text;
-            if (cachedDesc && (visionContext || rawText.includes('sura') || rawText.includes('image') || rawText.includes('photo') || rawText.includes('tsira') || rawText.includes('hadi') || rawText.includes('fiha'))) {
-                const imgAnalysis = `[System Vision Cache]: The user is currently showing you an image. Description: "${cachedDesc}".`;
-                const userQuery = text ? `The user is specifically asking: "${text}" about this image.` : "The user sent this image without text. Explain what is in it or solve any problems visible based on the description.";
-                contextPrompt = `${imgAnalysis}\n\nTask: Using the description above, answer the user's question or provide help as if you can see the image yourself.\n${userQuery}`;
+            if (cachedDesc && (visionContext || rawText.includes('sura') || rawText.includes('image') || rawText.includes('photo') || rawText.includes('tsira') || rawText.includes('hadi') || rawText.includes('fiha') || rawText.includes('resume'))) {
+                const imgAnalysis = `[IMPORTANT SYSTEM MESSAGE]: The user is asking about a specific image. DESCRIPTION: "${cachedDesc}".`;
+                const userQuery = text ? `USER QUESTION: "${text}"` : "ACTION: Describe the image or solve any problem shown in it.";
+                contextPrompt = `${imgAnalysis}\n\nTask: You are the bot's brain. Use the description to answer AS IF YOU CAN SEE IT. Don't be generic. If the user says 'resume', give more details about the image.\n${userQuery}`;
                 console.log(chalk.cyan(`[DEBUG] Enriched fallback prompt with detailed vision cache.`));
+            } else if (visionContext && !cachedDesc && Date.now() < geminiCooldownUntil) {
+                // Vision is needed but Gemini is down and we don't have a cached description
+                aiReply = "Sma7 lya, Gemini quota t-salat o m9ertech n-chouf tswira jadida. Men ba3d 10 min aw hdar m3aya bla tswira.";
             }
-            aiReply = await getHectormanuelAI(sender_psid, contextPrompt) ||
-                await getLuminAIResponse(sender_psid, contextPrompt) ||
-                await getCustomOpenAI(sender_psid, contextPrompt);
+
+            if (!aiReply) {
+                aiReply = await getHectormanuelAI(sender_psid, contextPrompt) ||
+                    await getLuminAIResponse(sender_psid, contextPrompt) ||
+                    await getCustomOpenAI(sender_psid, contextPrompt);
+            }
         }
 
         if (!aiReply) {
-            if (visionContext) {
-                aiReply = "Sma7 lya, quota d Gemini tsalat o ma9dertch nchouf tswira. Ghadi njawk 3la lktba f fallback mode.";
-                aiReply += "\n\n" + (await getHectormanuelAI(sender_psid, text) || "");
+            if (visionContext && Date.now() < geminiCooldownUntil) {
+                aiReply = "❌ Sma7 lya, Gemini quota t-salat o m9ertch n-fham t-swira. Tsnani 10 min aw hdar m3aya bla tswira.";
             } else {
                 aiReply = "Sma7 lya, mfhmtch (All AI services Busy).";
             }
