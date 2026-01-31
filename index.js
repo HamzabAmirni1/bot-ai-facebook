@@ -61,6 +61,14 @@ const downloader = {
             if (data.picker && data.picker.length > 0) return { status: true, result: { title: "Media Content", download: data.picker[0].url } };
         } catch (e) { console.error("Cobalt Error:", e.message); }
 
+        // Strategy 2: Ryzendesu API (Reliable Fallback)
+        try {
+            console.log(chalk.yellow("[DEBUG] Switching to Ryzendesu Downloader..."));
+            const type = isAudio ? 'mp3' : 'mp4';
+            const { data } = await axios.get(`https://api.ryzendesu.vip/api/downloader/ytdl?url=${link}&type=${type}`);
+            if (data.url) return { status: true, result: { title: data.filename || "Media", download: data.url } };
+        } catch (e) { console.error("Ryzendesu Error:", e.message); }
+
         return { status: false, error: "Download failed" };
     }
 };
