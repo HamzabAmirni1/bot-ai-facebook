@@ -124,7 +124,7 @@ async function getObitoGemini(question, imageUrl) {
         for (const url of endpoints) {
             try {
                 const { data } = await axios.get(url, { timeout: 15000 });
-                if (data.success && data.result) return data.result;
+                if (data && data.result) return data.result;
             } catch (e) { }
         }
         return null;
@@ -135,13 +135,20 @@ async function getRyzendesuVision(question, imageUrl) {
     try {
         if (!imageUrl) return null;
         const { data } = await axios.get(`https://api.ryzendesu.vip/api/ai/gemini-vision?url=${encodeURIComponent(imageUrl)}&text=${encodeURIComponent(question || "Analyze this")}`, { timeout: 20000 });
-        return data.result || null;
+        return data.result || data.response || null;
     } catch (e) { return null; }
 }
 
 async function getMaherVision(question, imageUrl) {
     try {
         const { data } = await axios.get(`https://api.maher-zubair.tech/ai/gemini-vision?q=${encodeURIComponent(question || "Describe")}&url=${encodeURIComponent(imageUrl)}`, { timeout: 20000 });
+        return data.result || data.message || null;
+    } catch (e) { return null; }
+}
+
+async function getPhoebeAI(message) {
+    try {
+        const { data } = await axios.get(`https://api.phoebe.my.id/api/chatgpt?text=${encodeURIComponent(message)}`);
         return data.result || null;
     } catch (e) { return null; }
 }
@@ -819,6 +826,7 @@ async function handleMessage(sender_psid, received_message) {
 
             // Normal AI Fallback Rotation
             aiReply = await getHectormanuelAI(sender_psid, contextPrompt) ||
+                await getPhoebeAI(contextPrompt) ||
                 await getLuminAIResponse(sender_psid, contextPrompt) ||
                 await getAichatResponse(sender_psid, contextPrompt) ||
                 await getVyturexAI(contextPrompt) ||
