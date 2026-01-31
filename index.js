@@ -147,13 +147,19 @@ async function getCustomOpenAI(senderId, message) {
     }
 }
 
+let geminiCooldownUntil = 0;
+
 async function getGeminiResponse(senderId, text, imageUrl = null) {
     if (!config.geminiApiKey) return null;
+    if (Date.now() < geminiCooldownUntil) {
+        console.log(chalk.yellow("[DEBUG] Gemini is on quota cooldown. Skipping..."));
+        return null;
+    }
     try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${config.geminiApiKey}`;
 
         const history = userChatHistory[senderId] || [];
-        const contents = [{ role: "user", parts: [{ text: systemPromptText }] }]; // System instruction as first user turn if system_instruction not supported in this endpoint version easily
+        const contents = [{ role: "user", parts: [{ text: systemPromptText }] }];
 
         history.forEach(h => {
             contents.push({
@@ -175,7 +181,13 @@ async function getGeminiResponse(senderId, text, imageUrl = null) {
         const res = await axios.post(url, { contents }, { timeout: 15000 });
         return res.data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
     } catch (e) {
-        console.error("Gemini Error:", e.response?.data || e.message);
+        const errorData = e.response?.data?.error;
+        if (errorData?.code === 429) {
+            console.error(chalk.red("[Gemini Quota] Limit reached. Cooldown for 10 mins."));
+            geminiCooldownUntil = Date.now() + 10 * 60 * 1000; // 10 min cooldown
+        } else {
+            console.error("Gemini Error:", errorData?.message || e.message);
+        }
         return null;
     }
 }
@@ -597,12 +609,27 @@ async function handleMessage(sender_psid, received_message) {
             return callSendAPI(sender_psid, { text: `👤 *Developer:* ${OWNER_NAME}\n📸 Instagram: ${config.social.instagram}\n💬 WhatsApp: ${config.social.whatsapp}` });
         }
 
-        // --- FALLBACK AI ---
-        let aiReply = imageUrl ? await getGeminiResponse(sender_psid, text, imageUrl) : (
-            await getCustomOpenAI(sender_psid, text) ||
-            await getLuminAIResponse(sender_psid, text) ||
-            await getHectormanuelAI(sender_psid, text)
-        );
+        // --- FALLBACK AI LOGIC ---
+        let aiReply = null;
+
+        // Try Gemini first (Vision support)
+        aiReply = await getGeminiResponse(sender_psid, text, imageUrl);
+
+        // If Gemini fails or no image, try fallbacks for text
+        if (!aiReply) {
+            aiReply = await getHectormanuelAI(sender_psid, text) ||
+                await getLuminAIResponse(sender_psid, text) ||
+                await getCustomOpenAI(sender_psid, text);
+        }
+
+        if (!aiReply) {
+            if (imageUrl) {
+                aiReply = "Sma7 lya, quota d Gemini tsalat o ma9dertch nchouf tswira. Ghadi njawk 3la lktba f fallback mode.";
+                aiReply += "\n\n" + (await getHectormanuelAI(sender_psid, text) || "");
+            } else {
+                aiReply = "Sma7 lya, mfhmtch (All AI services Busy).";
+            }
+        }
 
         if (!aiReply) aiReply = "Sma7 lya, mfhmtch.";
 
